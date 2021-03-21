@@ -1,0 +1,23 @@
+object TreeWnd: TTreeWnd
+  Left = 0
+  Top = 0
+  Width = 484
+  Height = 727
+  VertScrollBar.Size = 50
+  AutoScroll = True
+  Caption = 'Tree'
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  OnClose = FormClose
+  OnMouseDown = FormMouseDown
+  OnPaint = FormPaint
+  OnResize = FormResize
+  OnShow = FormShow
+  PixelsPerInch = 96
+  TextHeight = 13
+end
