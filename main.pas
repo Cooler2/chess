@@ -88,7 +88,7 @@ var
   selfLearnState:boolean;
 
 implementation
- uses logic,TreeView;
+ uses gamedata,logic,AI,TreeView;
 {$R *.dfm}
  var
   turnFrom,turnTo:integer;
@@ -102,7 +102,7 @@ end;
 
 procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
- if thread<>nil then Thread.Terminate;
+ if IsAIrunning then StopAI;
 end;
 
 procedure TMainForm.LibBtnMouseDown(Sender: TObject; Button: TMouseButton;
@@ -116,8 +116,7 @@ end;
 
 procedure TMainForm.LibEnableBtnClick(Sender: TObject);
 begin
- if StartBtn.Down then
-  thread.useLibrary:=LibEnableBtn.checked;
+ useLibrary:=LibEnableBtn.checked;
 end;
 
 procedure TMainForm.limitboxChange(Sender: TObject);

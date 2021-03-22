@@ -26,7 +26,7 @@ var
   TreeWnd: TTreeWnd;
 
 implementation
- uses Logic, main;
+ uses gamedata, main;
 
 {$R *.dfm}
 var
