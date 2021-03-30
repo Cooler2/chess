@@ -267,7 +267,11 @@ end;
 procedure TMainForm.NowTurnGroupClick(Sender: TObject);
 begin
  if curBoard.parent>=0 then
-  if not AskYesNo('История партии будет удалена.'#13#10'Вы уверены?','Внимание!') then exit;
+  if not AskYesNo('История партии будет удалена.'#13#10'Вы уверены?','Внимание!') then begin
+   turnWhiteBtn.Down:=curBoard.whiteTurn;
+   turnBlackBtn.Down:=not curBoard.whiteTurn;
+   exit;
+  end;
  curBoard.whiteTurn:=turnWhiteBtn.Down;
  memo.Lines.Clear;
  onTurnMade;
@@ -315,6 +319,42 @@ begin
    color:=black; color2:=white;
  end;
 
+ // Редактирование доски: Alt+click - белые Ctrl+Alt+click - черные
+ if (startBtn.Down=false) and (button=mbLeft) and (ssAlt in shift) then
+  with curBoard^ do begin
+   piece:=GetCell(i,j);
+   if ssCtrl in shift then
+    case piece of
+     0:piece:=PawnBlack;
+     PawnBlack:piece:=RookBlack;
+     RookBlack:piece:=KnightBlack;
+     KnightBlack:piece:=BishopBlack;
+     BishopBlack:piece:=QueenBlack;
+     QueenBlack:piece:=KingBlack;
+     KingBlack:piece:=0;
+    end
+   else
+    case piece of
+     0:piece:=PawnWhite;
+     PawnWhite:piece:=RookWhite;
+     RookWhite:piece:=KnightWhite;
+     KnightWhite:piece:=BishopWhite;
+     BishopWhite:piece:=QueenWhite;
+     QueenWhite:piece:=KingWhite;
+     KingWhite:piece:=0;
+    end;
+   SetCell(i,j,piece);
+   DrawBoard(sender);
+   exit;
+  end;
+
+ // Очистка клетки
+ if (startBtn.Down=false) and (button=mbRight) and (ssAlt in shift) then begin
+   curBoard.SetCell(i,j,0);
+   DrawBoard(sender);
+   exit;
+ end;
+
  if (button=mbLeft) then begin
    // если не наш ход и компьютер думает - двигать нельзя
    if StartBtn.Down and (playerWhite xor curBoard.WhiteTurn) then exit;
@@ -356,28 +396,6 @@ begin
     end;
    end;
  end;
-
- // Редактирование доски правой кнопкой
- if (button=mbRight) and (startBtn.Down=false) then
-  with curBoard^ do begin
-   piece:=GetCell(i,j);
-   case piece of
-    0:piece:=PawnWhite;
-    PawnWhite:piece:=RookWhite;
-    RookWhite:piece:=KnightWhite;
-    KnightWhite:piece:=BishopWhite;
-    BishopWhite:piece:=QueenWhite;
-    QueenWhite:piece:=KingWhite;
-    KingWhite:piece:=PawnBlack;
-    PawnBlack:piece:=RookBlack;
-    RookBlack:piece:=KnightBlack;
-    KnightBlack:piece:=BishopBlack;
-    BishopBlack:piece:=QueenBlack;
-    QueenBlack:piece:=KingBlack;
-    KingBlack:piece:=0;
-   end;
-   SetCell(i,j,piece);
-  end;
 
  except
   on e:exception do ForceLogMessage('Click error: '+ExceptionMsg(e));
@@ -557,6 +575,7 @@ end;
 procedure TMainForm.ClearBtnClick(Sender: TObject);
 begin
  InitNewGame;
+ curBoard.Clear;
  memo.Lines.Clear;
  DrawBoard(sender);
 end;
