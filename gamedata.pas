@@ -1,3 +1,4 @@
+п»ї// РљРѕРЅСЃС‚Р°РЅС‚С‹, С‚РёРїС‹, РіР»РѕР±Р°Р»СЊРЅС‹Рµ РґР°РЅРЅС‹Рµ Рё РѕРїРµСЂР°С†РёРё РЅР°Рґ РЅРёРјРё
 unit gamedata;
 interface
 const
@@ -16,31 +17,42 @@ const
  Black  = $80;
  {$ENDIF}
 
- PawnWhite=Pawn+White;
- RookWhite=Rook+White;
- KnightWhite=Knight+White;
- BishopWhite=Bishop+White;
- QueenWhite=Queen+White;
- KingWhite=King+White;
+ PawnWhite   = Pawn+White;
+ RookWhite   = Rook+White;
+ KnightWhite = Knight+White;
+ BishopWhite = Bishop+White;
+ QueenWhite  = Queen+White;
+ KingWhite   = King+White;
 
- PawnBlack=Pawn+Black;
- RookBlack=Rook+Black;
- KnightBlack=Knight+Black;
- BishopBlack=Bishop+Black;
- QueenBlack=Queen+Black;
- KingBlack=King+Black;
+ PawnBlack   = Pawn+Black;
+ RookBlack   = Rook+Black;
+ KnightBlack = Knight+Black;
+ BishopBlack = Bishop+Black;
+ QueenBlack  = Queen+Black;
+ KingBlack   = King+Black;
 
- ColorMask=Black+White;
+ ColorMask = Black+White;
+ PieceMask = 7;
 
- // Флаги для TBoard.flags
- movBeat=1; // ход со взятием фигуры
- movCheck=2; // ход с шахом
- movRepeat=$10; // проигрыш из-за повторения позиций
- movDB=$20; // позиция оценена из БД
+ // Р¤Р»Р°РіРё РґР»СЏ TBoard.flags
+ movBeat      = 1;   // С…РѕРґ СЃРѕ РІР·СЏС‚РёРµРј С„РёРіСѓСЂС‹
+ movCheck     = 2;   // С…РѕРґ СЃ С€Р°С…РѕРј
+ movCheckmate = 4;   // РјР°С‚ - РєРѕРЅРµС† РёРіСЂС‹
+ movStalemate = 8;   // РїР°С‚ - РєРѕРЅРµС† РёРіСЂС‹
+ movRepeat    = $10; // РєРѕРЅРµС† РёРіСЂС‹ РёР·-Р·Р° РїРѕРІС‚РѕСЂРµРЅРёСЏ РїРѕР·РёС†РёР№
+ movDB        = $20; // РїРѕР·РёС†РёСЏ РѕС†РµРЅРµРЅР° РёР· Р‘Р”
+ movLib       = $40; // С…РѕРґ РІР·СЏС‚ РёР· Р±РёР±Р»РёРѕС‚РµРєРё
 
+ movGameOver = movCheckmate+movStalemate+movRepeat; // РѕРґРёРЅ РёР· РІР°СЂРёР°РЅС‚РѕРІ РєРѕРЅС†Р° РёРіСЂС‹
 
- memsize=2500000;
- cachesize=$400000;
+ // РњР°РєСЃРёРјР°Р»СЊРЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ СЌР»РµРјРµРЅС‚РѕРІ РІ РјР°СЃСЃРёРІРµ РґР°РЅРЅС‹С…
+ {$IFDEF CPUx64}
+ memsize = 5000000;
+ {$ELSE}
+ memsize = 2500000;
+ {$ENDIF}
+
+ cacheSize=$400000;
  cacheMask=$3FFFFF;
 
 type
@@ -51,68 +63,80 @@ type
  {$ENDIF}
  PField=^TField;
 
+ PBoard=^TBoard;
  TBoard=record
-  field:TField; // [x,y]
-  rFlags:byte; // флаги рокировки 1,2 - ладьи, 4 - король
-  WhiteTurn:boolean;
-  weight:shortint; // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист
-  depth:shortint;
-  whiteRate,blackRate,rate:single;
-  lastTurnFrom,lastTurnTo,lastPiece:byte; // параметры посл. хода
-  flags:byte; // флаги последнего хода
-  parent,firstChild,lastChild,next,prev:integer; // ссылки дерева
+  cells:TField; // [x,y]
+  rFlags:byte;  // С„Р»Р°РіРё СЂРѕРєРёСЂРѕРІРєРё 1,2 - Р»Р°РґСЊРё, 4 - РєРѕСЂРѕР»СЊ
+  whiteTurn:boolean; // С‡РµР№ СЃРµР№С‡Р°СЃ С…РѕРґ
+  depth:byte;
+  weight:single;   // РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ Р±РёР±Р»РёРѕС‚РµРєРµ РєР°Рє РІРµСЃ С…РѕРґР°, Р° РІ Р»РѕРіРёРєРµ - РЅР° СЃРєРѕР»СЊРєРѕ РїСЂРѕРґР»РµРІР°С‚СЊ Р»РёСЃС‚
+  whiteRate,blackRate,rate:single; // РѕС†РµРЅРєРё РїРѕР·РёС†РёРё
+  lastTurnFrom,lastTurnTo:byte; // РїР°СЂР°РјРµС‚СЂС‹ РїРѕСЃР»РµРґРЅРµРіРѕ С…РѕРґР°
+  lastPiece:byte; // С‚РёРї РІР·СЏС‚РѕР№ РїРѕСЃР»РµРґРЅРёРј С…РѕРґРѕРј С„РёРіСѓСЂС‹
+  flags:byte; // С„Р»Р°РіРё РїРѕСЃР»РµРґРЅРµРіРѕ С…РѕРґР°
+  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // СЃСЃС‹Р»РєРё РґРµСЂРµРІР°
   procedure Clear;
-  function CellEmpty(x,y:integer):boolean; inline;
+  function CellIsEmpty(x,y:integer):boolean; inline;
+  function CellOccupied(x,y:integer):boolean; inline;
   function GetCell(x,y:integer):byte; inline;
   procedure SetCell(x,y:integer;value:byte); inline;
   function GetPieceType(x,y:integer):byte; inline;
   function GetPieceColor(x,y:integer):byte; inline;
+  procedure FromString(st:string);
+  function ToString:string;
  end;
 
  TMovesList=array[0..199] of byte; // [0] - number of moves, [1]..[n] - target cell position
 
+ // РЎРѕС…СЂР°РЅС‘РЅРЅР°СЏ РѕС†РµРЅРєР° РїРѕР·РёС†РёРё
  TCacheItem=record
   hash:int64;
   rate:integer;
  end;
 
+ // РЎРѕС…СЂР°РЅС‘РЅРЅС‹Р№ С…РѕРґ
+ TSavedTurn=record
+  field:TField;
+  whiteTurn:boolean;
+  turnFrom,turnTo,weight:byte;
+  function CompareWithBoard(var b:TBoard):boolean;
+ end;
+
+ // СѓСЃС‚Р°РЅР°РІР»РёРІР°СЋС‚СЃСЏ С„Р»Р°РіРё Black/White РґР»СЏ РїРѕР»РµР№, РЅР°С…РѕРґСЏС‰РёС…СЃСЏ РїРѕРґ Р±РѕРµРј
+ // Р±РёС‚С‹: 0-2 - С‚РёРї РјР»Р°РґС€РµР№ Р±РµР»РѕР№ С„РёРіСѓСЂС‹, СЃРїРѕСЃРѕР±РЅРѕР№ РІР·СЏС‚СЊ СЌС‚Рѕ РїРѕР»Рµ
+ //       3-5 - С‚РёРї РјР»Р°РґС€РµР№ С‡РµСЂРЅРѕР№ С„РёРіСѓСЂС‹, СЃРїРѕСЃРѕР±РЅРѕР№ РІР·СЏС‚СЊ СЌС‚Рѕ РїРѕР»Рµ
+ //       6 - РїРѕР»Рµ РїРѕРґ Р±РѕРµРј Сѓ Р±РµР»РѕР№ С„РёРіСѓСЂС‹
+ //       7 - РїРѕР»Рµ РїРѕРґ Р±РѕРµРј Сѓ С‡РµСЂРЅРѕР№ С„РёРіСѓСЂС‹
+ TBeatable=array[0..7,0..7] of byte;
+
 var
- gameover:byte; // 0 - игра, 1 - пат, 2 - мат белым, 3 - мат черным, 4 - пауза
- // Текущая позиция
- board:TBoard;
- selected:array[0..7,0..7] of byte;
- playerWhite:boolean=true; // за кого играет человек
- animation:integer=0;
- gamestage:integer; // 1 - дебют, 2 - миттельшпиль, 3 - эндшпиль
+ // РџР°РјСЏС‚СЊ: Р·РґРµСЃСЊ С…СЂР°РЅРёС‚СЃСЏ РІСЃС‘ РґРµСЂРµРІРѕ РїРѕРёСЃРєР° Рё РёСЃС‚РѕСЂРёСЏ РїР°СЂС‚РёРё (СЃС‚РІРѕР»)
+ data:array of TBoard;
+ freeList:array of integer; // СЃРїРёСЃРѕРє СЃРІРѕР±РѕРґРЅС‹С… СЌР»-С‚РѕРІ
+ freeCnt:integer; // РєРѕР»-РІРѕ СЃРІРѕР±РѕРґРЅС‹С… СЌР»РµРјРµРЅС‚РѕРІ РІ СЃРїРёСЃРєРµ
+ dataLocker:NativeInt; // Р±Р»РѕРєРёСЂРѕРІРєР° РґРµСЂРµРІР°
+ totalLeafCount:integer; // РѕР±С‰РµРµ РєРѕР»РёС‡РµСЃС‚РІРѕ Р»РёСЃС‚СЊРµРІ РІ РґРµСЂРµРІРµ РїРѕРёСЃРєР°
 
- // история партии
- history:array[1..300] of TBoard;
- historyPos,historySize:integer;
+ // РўРµРєСѓС‰РµРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РёРіСЂС‹
+ gameState:byte; // 0 - РёРіСЂР°, 1 - РїР°С‚, 2 - РјР°С‚ Р±РµР»С‹Рј, 3 - РјР°С‚ С‡РµСЂРЅС‹Рј, 4 - РїР°СѓР·Р°
+ // РўРµРєСѓС‰Р°СЏ РїРѕР·РёС†РёСЏ
+ curBoardIdx:integer; // РёРЅРґРµРєСЃ С‚РµРєСѓС‰РµР№ РїРѕР·РёС†РёРё РІ РґРµСЂРµРІРµ
+ curBoard:PBoard; // СѓРєР°Р·Р°С‚РµР»СЊ РґР»СЏ СѓРґРѕР±СЃС‚РІР°
 
- // библиотека
- turnLib:array of TBoard;
+ playerWhite:boolean=true; // Р·Р° РєРѕРіРѕ РёРіСЂР°РµС‚ С‡РµР»РѕРІРµРє
+ gameStage:integer; // 1 - РґРµР±СЋС‚, 2 - РјРёС‚С‚РµР»СЊС€РїРёР»СЊ, 3 - СЌРЅРґС€РїРёР»СЊ
 
- // база оценок
+ // Р±РёР±Р»РёРѕС‚РµРєР°
+ turnLib:array of TSavedTurn;
+
+ // Р±Р°Р·Р° РѕС†РµРЅРѕРє
  dbItems:array of TCacheItem;
 
- // устанавливаются флаги Black/White для полей, находящихся под боем
- // биты: 0-2 - тип младшей белой фигуры
- //       3-5 - тип младшей черной фигуры
- //       6 - под боем у белой фигуры
- //       7 - под боем у черной фигуры
- beatable:array[0..7,0..7] of byte;
-
- // Память
- data:array[1..memsize] of TBoard;
- freeList:array[1..memsize] of integer; // список свободных эл-тов
- freecnt:integer; // кол-во свободных эл-тов в списке
- leafs:integer;
-
- // Очередь
+ // РћС‡РµСЂРµРґСЊ Р°РєС‚РёРІРЅС‹С… Р»РёСЃС‚СЊС‘РІ
  qu:array[1..memsize] of integer;
  qstart,qlast:integer;
 
- // кэш оценок позиций
+ // РєСЌС€ РѕС†РµРЅРѕРє РїРѕР·РёС†РёР№
  cache:array[0..cachesize-1] of TCacheItem;
  cacheMiss,cacheUse:integer;
 
@@ -120,24 +144,32 @@ var
 
  // Search tree operations
  // ----
- function AddChild(root:integer):integer;
+ function AllocBoard:integer; inline; // allocate data node
+ function AddChild(_parent:integer):integer; // allocate new node and make it child
  procedure DeleteNode(node:integer;updateLinks:boolean=true);
  function CountLeaves(node:integer):integer;
 
- // Операции над доской
+ // РћРїРµСЂР°С†РёРё РЅР°Рґ РґРѕСЃРєРѕР№
  // ---
- // Расставляет фигуры для начала партии а также готовит остальные параметры
- procedure InitBoard(var board:TBoard);
- // Сравнение позиций для их сортировки
- function CompareBoards(var b1,b2:TBoard):integer;
- // Вычисление хэша позиции
+ // Р Р°СЃСЃС‚Р°РІР»СЏРµС‚ С„РёРіСѓСЂС‹ РґР»СЏ РЅР°С‡Р°Р»Р° РїР°СЂС‚РёРё Р° С‚Р°РєР¶Рµ РіРѕС‚РѕРІРёС‚ РѕСЃС‚Р°Р»СЊРЅС‹Рµ РїР°СЂР°РјРµС‚СЂС‹
+ procedure InitNewGame;
+
+ // РЎСЂР°РІРЅРµРЅРёРµ РїРѕР·РёС†РёР№ РґР»СЏ РёС… СЃРѕСЂС‚РёСЂРѕРІРєРё
+ function CompareBoards(var b1,b2:TBoard):integer; overload;
+ function CompareBoards(b1,b2:integer):integer; overload; inline;
+
+ // Р’С‹С‡РёСЃР»РµРЅРёРµ С…СЌС€Р° РїРѕР·РёС†РёРё
  function BoardHash(var b:TBoard):int64;
 
- // Вспомогательные функции
+ // Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ С„СѓРЅРєС†РёРё
  // ---
- function NameCell(x,y:integer):string; // формирует имя клетки, например 'b3'
+ function NameCell(x,y:integer):string; // С„РѕСЂРјРёСЂСѓРµС‚ РёРјСЏ РєР»РµС‚РєРё, РЅР°РїСЂРёРјРµСЂ 'b3'
+ function FieldToStr(f:TField):string;
+ function FieldFromStr(st:string):TField;
+ function IsPlayerTurn:boolean; // true - С…РѕРґ РёРіСЂРѕРєР°, false - РїСЂРѕС‚РёРІРЅРёРєР°
 
- // Библиотека: база "книжных" ходов
+
+ // Р‘РёР±Р»РёРѕС‚РµРєР°: Р±Р°Р·Р° "РєРЅРёР¶РЅС‹С…" С…РѕРґРѕРІ
  // ---
  procedure LoadLibrary;
  procedure SaveLibrary;
@@ -145,7 +177,7 @@ var
  procedure AddAllMovesToLibrary(weight:byte);
  procedure DeleteLastMoveFromLibrary;
 
- // База оценок позиций
+ // Р‘Р°Р·Р° РѕС†РµРЅРѕРє РїРѕР·РёС†РёР№
  procedure LoadRates;
  procedure SaveRates;
 
@@ -156,7 +188,7 @@ implementation
   ratesFileName = 'rates.dat';
   libFileName = 'lib.dat';
 
-  // таблица для построение хэша позиций
+  // С‚Р°Р±Р»РёС†Р° РґР»СЏ РїРѕСЃС‚СЂРѕРµРЅРёРµ С…СЌС€Р° РїРѕР·РёС†РёР№
   randomtab:array[0..511] of cardinal=(
           $5D7ECBC5,$9C063C89,$B94BF27E,$5EF923B6,$10217F1D,$0D1D8B4E,$C750E8EB,$2A4BB3C0,$42FE8E50,$5EFFB9A4,$ED0F8772,$056186F4,$DB53950D,$43938687,$40F00792,$FF3C95CF,
           $1710BA84,$3653F0D5,$A8CC8010,$892D1472,$EE5898EC,$01CAD2D0,$E3711473,$645E1622,$45063500,$951C0DA1,$62243488,$DF48C0C8,$EC24057B,$297C44D1,$F218EBDD,$633B1071,
@@ -192,54 +224,85 @@ implementation
           $5E9F1658,$6391A189,$98C1E210,$423660CC,$0BF95072,$5C61D4A0,$10CE70D6,$663246D3,$B23B3BD0,$C308127C,$8A9C93D5,$F8941332,$DFD48210,$4F1BF689,$2AC18B7F,$EB0CEBD4
           );
 
- function AddChild(root:integer):integer;
+ procedure SpinLock(var lock:NativeInt); inline;
   begin
-   result:=freeList[freecnt];
-   dec(freecnt);
+   while AtomicCmpExchange(lock,1,0)<>0 do YieldProcessor;
+   MemoryBarrier;
+  end;
+
+ procedure Unlock(var lock:NativeInt); inline;
+  begin
+   MemoryBarrier;
+   lock:=0;
+  end;
+
+ function AllocBoard:integer;
+  begin
+   ASSERT(freeCnt>0);
+   result:=freeList[freeCnt];
+   dec(freeCnt);
+  end;
+
+ procedure FreeBoard(index:integer); inline;
+  begin
+   inc(freecnt);
+   freeList[freecnt]:=index;
+  end;
+
+ function AddChild(_parent:integer):integer;
+  begin
+   SpinLock(dataLocker);
+   result:=AllocBoard;
    with data[result] do begin
-    parent:=root;
-    next:=0; prev:=0;
+    parent:=_parent;
+    nextSibling:=0; prevSibling:=0;
     firstChild:=0;
     lastChild:=0;
+    cells:=data[_parent].cells;
+    depth:=data[_parent].depth+1;
+    rFlags:=data[_parent].rFlags;
+    whiteTurn:=not data[_parent].whiteTurn;
     flags:=0;
    end;
-   with data[root] do begin
+   with data[_parent] do begin
     if (lastChild>0) then begin
-     // не первый потомок
-     data[lastChild].next:=result;
-     data[result].prev:=lastChild;
+     // РЅРµ РїРµСЂРІС‹Р№ РїРѕС‚РѕРјРѕРє
+     data[lastChild].nextSibling:=result;
+     data[result].prevSibling:=lastChild;
      lastChild:=result;
     end else begin
-     // первый потомок
+     // РїРµСЂРІС‹Р№ РїРѕС‚РѕРјРѕРє
      lastChild:=result;
      firstChild:=result;
     end;
    end;
+   Unlock(dataLocker);
   end;
 
- // Удаление узла из дерева
+ // РЈРґР°Р»РµРЅРёРµ СѓР·Р»Р° РёР· РґРµСЂРµРІР°
  procedure DeleteNode(node:integer;updateLinks:boolean=true);
   var
    d:integer;
   begin
-   // 1. Удаление всех потомков
+   SpinLock(dataLocker);
+   // 1. РЈРґР°Р»РµРЅРёРµ РІСЃРµС… РїРѕС‚РѕРјРєРѕРІ
    d:=data[node].firstChild;
    while d>0 do begin
     DeleteNode(d,false);
-    d:=data[d].next;
+    d:=data[d].nextSibling;
    end;
-   inc(freecnt);
-   freeList[freecnt]:=node;
+   FreeBoard(node);
+
    if updateLinks then with data[node] do begin
-    if prev>0 then data[prev].next:=next;
-    if next>0 then data[next].prev:=prev;
+    if prevSibling>0 then data[prevSibling].nextSibling:=nextSibling;
+    if nextSibling>0 then data[nextSibling].prevSibling:=prevSibling;
     if (parent>0) then begin
-     if data[parent].firstChild=node then data[parent].firstChild:=next;
-     if data[parent].lastChild=node then data[parent].lastChild:=prev;
+     if data[parent].firstChild=node then data[parent].firstChild:=nextSibling;
+     if data[parent].lastChild=node then data[parent].lastChild:=prevSibling;
     end;
    end;
+   Unlock(dataLocker);
   end;
-
 
  function CountLeaves(node:integer):integer;
   var
@@ -252,41 +315,68 @@ implementation
    end;
    while d>0 do begin
     inc(result,CountLeaves(d));
-    d:=data[d].next;
+    d:=data[d].nextSibling;
    end;
   end;
 
- procedure InitBoard(var board:TBoard);
+ procedure InitNewGame;
   var
    i:integer;
   begin
-   board.Clear;
-   with board do begin
+   // Init data storage
+   SetLength(data,memSize);
+   SetLength(freeList,memSize);
+   freecnt:=0;
+   for i:=memsize-1 downto 0 do begin
+    freeList[freecnt]:=i;
+    inc(freecnt);
+   end;
+   dec(FreeCnt); // Alloc node #0 for root
+   curBoardIdx:=0;
+   curBoard:=@data[curBoardIdx];
+
+   // РќР°С‡Р°Р»СЊРЅР°СЏ РїРѕР·РёС†РёСЏ
+   with curBoard^ do begin
+    Clear;
     for i:=0 to 7 do begin
      SetCell(i,1,PawnWhite);
      SetCell(i,6,PawnBlack);
     end;
-    field[0,0]:=$42; field[0,7]:=$82;
-    field[1,0]:=$43; field[1,7]:=$83;
-    field[2,0]:=$44; field[2,7]:=$84;
-    field[3,0]:=$45; field[3,7]:=$85;
-    field[4,0]:=$46; field[4,7]:=$86;
-    field[5,0]:=$44; field[5,7]:=$84;
-    field[6,0]:=$43; field[6,7]:=$83;
-    field[7,0]:=$42; field[7,7]:=$82;
+    SetCell(0,0,RookWhite);
+    SetCell(1,0,KnightWhite);
+    SetCell(2,0,BishopWhite);
+    SetCell(3,0,QueenWhite);
+    SetCell(4,0,KingWhite);
+    SetCell(5,0,BishopWhite);
+    SetCell(6,0,KnightWhite);
+    SetCell(7,0,RookWhite);
+
+    SetCell(0,7,RookBlack);
+    SetCell(1,7,KnightBlack);
+    SetCell(2,7,BishopBlack);
+    SetCell(3,7,QueenBlack);
+    SetCell(4,7,KingBlack);
+    SetCell(5,7,BishopBlack);
+    SetCell(6,7,KnightBlack);
+    SetCell(7,7,RookBlack);
+
     whiteTurn:=true;
     whiteRate:=0;
     blackRate:=0;
-    parent:=0;
+    parent:=-1;
     rFlags:=0;
    end;
-   historyPos:=0; // нет предыдущих состояний
-   gameover:=0;
+   gameState:=0;
   end;
 
  function NameCell(x,y:integer):string;
   begin
    result:=chr(97+x)+inttostr(y+1);
+  end;
+
+ function CompareBoards(b1,b2:integer):integer;
+  begin
+   result:=CompareBoards(data[b1],data[b2]);
   end;
 
  function CompareBoards(var b1,b2:TBoard):integer;
@@ -324,7 +414,6 @@ implementation
    ret 8
   end;
 
-
  function BoardHash(var b:TBoard):int64;
   asm
    push esi
@@ -354,148 +443,135 @@ implementation
 
  procedure LoadLibrary;
   var
-   f:file;
-   i,j,n:integer;
-   t:text;
-   v:cardinal;
-   fl:boolean;
+   f:text;
+   st:string;
+   sa:StringArr;
+   nv:TNameValue;
+   i,n:integer;
   begin
    if fileexists(libFileName) then begin
     try
+     LogMessage('Loading turns library');
      assign(f,libFileName);
-     filemode:=0;
-     reset(f,1);
-     n:=filesize(f) div 128;
-     setLength(turnLib,n);
-     for i:=0 to n-1 do begin
-      seek(f,i*128);
-      blockread(f,turnlib[i],sizeof(TBoard));
+     reset(f);
+     while not eof(f) do begin
+      readln(f,st);
+      sa:=Split(';',st);
+      n:=length(turnLib);
+      SetLength(turnLib,n+1);
+
+      for i:=0 to high(sa) do begin
+       nv.Init(sa[i],'=');
+       if nv.value='' then turnLib[n].field:=FieldFromStr(nv.name)
+       else
+       if nv.Named('from') then turnLib[n].turnFrom:=nv.GetInt
+       else
+       if nv.Named('to') then turnLib[n].turnTo:=nv.GetInt
+       else
+       if nv.Named('weight') then turnLib[n].weight:=nv.GetInt
+       else
+       if nv.Named('plr') then turnLib[n].whiteTurn:=SameText(nv.value,'white');
+      end;
      end;
      close(f);
+     LogMessage('Library loaded: %d records',[n]);
     except
      on e:Exception do begin
-      ErrorMessage('Ошибка доступа к файлу. Возможно диск защищен от записи.');
+      ErrorMessage('РћС€РёР±РєР° РґРѕСЃС‚СѓРїР° Рє С„Р°Р№Р»Сѓ. Р’РѕР·РјРѕР¶РЅРѕ РґРёСЃРє Р·Р°С‰РёС‰РµРЅ РѕС‚ Р·Р°РїРёСЃРё.');
       halt;
      end;
     end;
    end;
-   filemode:=2;
-   fl:=false;
-   i:=2;
-   n:=length(turnlib);
-   while i<n do begin
-    for j:=1 to i-1 do
-     if (CompareBoards(turnlib[i],turnlib[j])=0) and
-        (turnlib[i].lastTurnFrom=turnlib[j].lastTurnFrom) and
-        (turnlib[i].lastTurnTo=turnlib[j].lastTurnTo) then begin
-      turnlib[i]:=turnlib[n-1];
-      dec(n);
-      dec(i);
-     end;
-    inc(i);
-   end;
-   if n<length(turnlib) then begin
-    setLength(turnlib,n);
-    SaveLibrary;
-   end;
   end;
 
  procedure SaveLibrary;
+  const
+   plrs:array[boolean] of string=('white','black');
   var
    i,n:integer;
-   f:file;
+   f:text;
   begin
-   assign(f,libFileName);
-   rewrite(f,1);
-   n:=length(turnLib);
-   for i:=0 to n-1 do begin
-    seek(f,i*128);
-    blockwrite(f,turnlib[i],sizeof(TBoard));
+   LogMessage('Saving library');
+   try
+    assign(f,libFileName);
+    rewrite(f);
+    for i:=0 to high(turnLib) do
+     with turnLib[i] do
+      writeln(f,Format('%s;from=%d;to=%d;plr=%s;weight=%d',
+       [FieldToStr(field),turnFrom,turnTo,plrs[whiteTurn],weight]));
+    close(f);
+   except
+    on e:Exception do begin
+     ForceLogMessage('Save error: '+ExceptionMsg(e));
+     ErrorMessage('РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ Р±РёР±Р»РёРѕС‚РµРєРё: '#13#10+ExceptionMsg(e));
+    end;
    end;
-   close(f);
   end;
 
- procedure AddLastMoveToLibrary(weight:byte);
+ // Р”РѕР±Р°РІР»СЏРµС‚ С…РѕРґ РІ Р±РёР±Р»РёРѕС‚РµРєСѓ (Р±РµР· СЃРѕС…СЂР°РЅРµРЅРёСЏ РµС‘ РЅР° РґРёСЃРє)
+ procedure AddMoveToLibrary(board:integer;weight:byte);
   var
    i,n:integer;
    f:file;
    p1,p2:byte;
   begin
-   if historyPos=0 then exit;
-   // Проверить, есть ли уже такой ход в библиотеке
+   // РџСЂРѕРІРµСЂРёС‚СЊ, РµСЃС‚СЊ Р»Рё СѓР¶Рµ С‚Р°РєРѕР№ С…РѕРґ РІ Р±РёР±Р»РёРѕС‚РµРєРµ
    n:=length(turnLib);
-   p1:=board.lastTurnFrom;
-   p2:=board.lastTurnTo;
+   p1:=data[board].lastTurnFrom;
+   p2:=data[board].lastTurnTo;
    for i:=0 to n-1 do
-    if (CompareBoards(turnLib[i],history[historypos])=0) and
-       (turnlib[i].lastTurnFrom=p1) and (turnlib[i].lastTurnTo=p2) then begin
-     turnlib[i].weight:=weight;
+    if turnLib[i].CompareWithBoard(data[board]) then begin
+     turnlib[i].weight:=weight; // update weight
      SaveLibrary;
      exit;
     end;
-   // не найдено
-   setLength(turnLib,n+1);
-   turnlib[n]:=history[historypos];
-   turnlib[n].lastTurnFrom:=p1;
-   turnlib[n].lastTurnTo:=p2;
+   // РЅРµ РЅР°Р№РґРµРЅРѕ
+   SetLength(turnLib,n+1);
+   turnlib[n].field:=data[board].cells;
+   turnlib[n].turnFrom:=p1;
+   turnlib[n].turnTo:=p2;
    turnlib[n].weight:=weight;
+  end;
+
+ /// TODO: РґСѓР±Р»РёСЂСѓРµС‚СЃСЏ РєРѕРґ - РїРµСЂРµРїРёСЃР°С‚СЊ
+ procedure AddLastMoveToLibrary(weight:byte);
+  begin
+   if curBoard.parent<0 then exit;
+   AddMoveToLibrary(curBoardIdx,weight);
    SaveLibrary;
   end;
 
  procedure AddAllMovesToLibrary(weight:byte);
   var
-   i,n,j:integer;
-   f:file;
-   p1,p2:byte;
-   addflag:boolean;
+   idx:integer;
   begin
-   if historyPos=0 then exit;
-   for j:=1 to historyPos do begin
-    // Проверить, есть ли уже такой ход в библиотеке
-    if j=historyPos then begin
-     p1:=board.lastTurnFrom;
-     p2:=board.lastTurnTo;
-    end else begin
-     p1:=history[j+1].lastTurnFrom;
-     p2:=history[j+1].lastTurnTo;
-    end;
-    n:=length(turnLib);
-    addflag:=true;
-    for i:=0 to n-1 do
-     if (CompareBoards(turnLib[i],history[j])=0) and
-        (turnlib[i].lastTurnFrom=p1) and (turnlib[i].lastTurnTo=p2) then begin
-      turnlib[i].weight:=weight;
-      addflag:=false;
-      break;
-     end;
-    if addflag then begin
-     // не найдено
-     setLength(turnLib,n+1);
-     turnlib[n]:=history[j];
-     turnlib[n].lastTurnFrom:=p1;
-     turnlib[n].lastTurnTo:=p2;
-     turnlib[n].weight:=weight;
-    end;
+   idx:=curBoardIdx;
+   while data[idx].parent>=0 do begin
+    AddMoveToLibrary(idx,weight);
+    idx:=data[idx].parent;
    end;
    SaveLibrary;
   end;
 
-
  procedure DeleteLastMoveFromLibrary;
   var
-   i,n:integer;
+   i,n,b:integer;
   begin
-   if historypos=0 then exit;
+   b:=curBoard.parent;
+   if b<0 then exit;
    n:=length(turnLib);
    for i:=0 to n-1 do
-    if CompareBoards(turnLib[i],history[historypos])=0 then begin
-     turnlib[i]:=turnlib[n-1];
-     SetLength(turnlib,n-1);
+    if turnLib[i].CompareWithBoard(data[b]) then begin
+     n:=i;
+     while n<high(turnLib) do begin
+      turnlib[n]:=turnlib[n+1];
+      inc(n);
+     end;
+     SetLength(turnlib,n);
      SaveLibrary;
      exit;
     end;
   end;
-
 
  procedure LoadRates;
   var
@@ -535,36 +611,130 @@ implementation
    end;
   end;
 
+ function IsPlayerTurn:boolean;
+  begin
+   result:=not curBoard.whiteTurn xor playerWhite;
+  end;
+
 { TBoard }
 
-function TBoard.CellEmpty(x,y:integer):boolean;
- begin
-  result:=field[x,y]=0;
- end;
+ function TBoard.CellIsEmpty(x,y:integer):boolean;
+  begin
+   result:=cells[x,y]=0;
+  end;
 
-procedure TBoard.Clear;
- begin
-  fillchar(field,sizeof(field),0);
- end;
+ function TBoard.CellOccupied(x,y:integer):boolean;
+  begin
+   result:=cells[x,y]<>0;
+  end;
 
-function TBoard.GetCell(x,y:integer):byte;
- begin
-  result:=field[x,y];
- end;
+ procedure TBoard.Clear;
+  begin
+   fillchar(cells,sizeof(cells),0);
+  end;
 
-function TBoard.GetPieceColor(x,y:integer):byte;
- begin
-  result:=field[x,y] and ColorMask;
- end;
+function FieldFromStr(st: string):TField;
+  var
+   i,p,v:integer;
+   c:char;
+   b:TBoard;
+  begin
+   p:=0;
+   b.Clear;
+   for i:=1 to length(st) do begin
+    c:=st[i];
+    case c of
+     '.':v:=0;
+     'a':v:=PawnWhite;
+     'b':v:=RookWhite;
+     'c':v:=KnightWhite;
+     'd':v:=BishopWhite;
+     'e':v:=QueenWhite;
+     'f':v:=KingWhite;
+     'A':v:=PawnBlack;
+     'B':v:=RookBlack;
+     'C':v:=KnightBlack;
+     'D':v:=BishopBlack;
+     'E':v:=QueenBlack;
+     'F':v:=KingBlack;
+     else continue;
+    end;
+    b.SetCell(p mod 8,p div 8,v);
+    inc(p);
+   end;
+  end;
 
-function TBoard.GetPieceType(x,y:integer):byte;
- begin
-  result:=field[x,y] and 7;
- end;
+ function GetPieceType(const f:TField;x,y:integer):integer; inline;
+  begin
+   result:=f[x,y] and PieceMask;
+  end;
 
-procedure TBoard.SetCell(x,y:integer;value:byte);
+ function GetPieceColor(const f:TField;x,y:integer):integer; inline;
+  begin
+   result:=f[x,y] and ColorMask;
+  end;
+
+ function FieldToStr(f:TField):string;
+  var
+   x,y,piece:integer;
+   c:char;
+   b:TBoard;
+  begin
+   b.cells:=f;
+   SetLength(result,64);
+   for y:=0 to 7 do
+    for x:=0 to 7 do begin
+     piece:=GetPieceType(f,x,y);
+     if piece>0 then
+      c:=Char(ord('a')+piece)
+     else
+      c:='.';
+     if GetPieceColor(f,x,y)>0 then c:=UpCase(c);
+     result[1+x+y*8]:=c;
+    end;
+  end;
+
+ function TBoard.GetCell(x,y:integer):byte;
+  begin
+   result:=cells[x,y];
+  end;
+
+ function TBoard.GetPieceColor(x,y:integer):byte;
+  begin
+   result:=cells[x,y] and ColorMask;
+  end;
+
+ function TBoard.GetPieceType(x,y:integer):byte;
+  begin
+   result:=cells[x,y] and PieceMask;
+  end;
+
+ procedure TBoard.SetCell(x,y:integer;value:byte);
+  begin
+   cells[x,y]:=value;
+  end;
+
+ function TBoard.ToString: string;
+  begin
+   result:=Format('cells=%s; white=%d; from=%d; to=%d; rF=%d; f=%d',
+    [FieldToStr(cells),byte(whiteTurn),lastTurnFrom,lastTurnTo,rFlags,flags]);
+  end;
+
+ procedure TBoard.FromString(st: string);
+  begin
+
+  end;
+
+
+{ TSavedTurn }
+
+function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
  begin
-  field[x,y]:=value;
+  result:=false;
+  if (b.lastTurnFrom<>turnFrom) or (b.lastTurnTo<>turnTo)
+    or (b.whiteTurn<>whiteTurn) then exit;
+  if CompareMem(@b.cells,@field,sizeof(field)) then exit;
+  result:=true;
  end;
 
 end.

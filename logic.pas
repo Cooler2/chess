@@ -1,25 +1,37 @@
-{$A4}
+п»ї// Р’ СЌС‚РѕРј РјРѕРґСѓР»Рµ СЂРµР°Р»РёР·РѕРІР°РЅС‹ РїСЂР°РІРёР»Р° С€Р°РјР°С‚РЅРѕР№ РёРіСЂС‹: РєС‚Рѕ РєСѓРґР° С…РѕРґРёС‚, РєР°Рє Р±СЊС‘С‚ Рё С‚.Рї.
 unit logic;
 interface
 uses gamedata;
- // флаги
- //amValid=1; // только корректные ходы
+ // С„Р»Р°РіРё
+ //amValid=1; // С‚РѕР»СЊРєРѕ РєРѕСЂСЂРµРєС‚РЅС‹Рµ С…РѕРґС‹
 
- // Составляет список возможных ходов для данной фигуры (в массив moves)
+ // РЎРѕСЃС‚Р°РІР»СЏРµС‚ СЃРїРёСЃРѕРє РІРѕР·РјРѕР¶РЅС‹С… С…РѕРґРѕРІ РґР»СЏ РґР°РЅРЅРѕР№ С„РёРіСѓСЂС‹ (РІ РјР°СЃСЃРёРІ moves)
  procedure GetAvailMoves(var board:TBoard;fromPos:byte;var moves:TMovesList);
 
- // отмечает поля, находящиеся под боем
- procedure CalcBeatable(var board:TBoard);
+ // РћС‚РјРµС‡Р°РµС‚ РїРѕР»СЏ, РЅР°С…РѕРґСЏС‰РёРµСЃСЏ РїРѕРґ Р±РѕРµРј, Р° С‚Р°РєР¶Рµ РѕРїСЂРµРґРµР»СЏРµС‚ С‚РёРї Р·Р°С‰РёС‰Р°СЋС‰РёС… С„РёРіСѓСЂ
+ procedure CalcBeatable(var board:TBoard;out beatable:TBeatable);
 
+ // Р’С‹РїРѕР»РЅСЏРµС‚ С…РѕРґ: РїРµСЂРµРјРµС‰Р°РµС‚ С„РёРіСѓСЂСѓ СЃ РїРѕР»СЏ from РІ РїРѕР»Рµ target Рё РїСЂРѕРёР·РІРѕРґРёС‚ РЅРµРѕР±С…РѕРґРёРјС‹Рµ РёР·РјРµРЅРµРЅРёСЏ
  procedure DoMove(var board:TBoard;from,target:byte);
 
- // Возвращает состояние шаха: был ли поставлен шах последним ходом
+ // Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃРѕСЃС‚РѕСЏРЅРёРµ С€Р°С…Р°: Р±С‹Р» Р»Рё РїРѕСЃС‚Р°РІР»РµРЅ С€Р°С… РїРѕСЃР»РµРґРЅРёРј С…РѕРґРѕРј
  function IsCheck(var b:TBoard):boolean;
+
+ // Performance profiling
+ procedure ResetCounters;
+ procedure LogCounters;
 
 implementation
  uses SysUtils,Apus.MyServis;
 
- procedure CalcBeatable2(var board:TBoard);
+ var
+  // performance counters
+  getAvailMovesCount:int64;
+  calcBeatableCount:int64;
+  doMoveCount:int64;
+  isCheckCount:int64;
+
+{ procedure CalcBeatable2(var board:TBoard);
   var
    i,j,k,n,x,y:integer;
    fig,figpos:array[1..32] of byte;
@@ -52,13 +64,13 @@ implementation
 //      if
      end;
    end;
-  end;
+  end; }
 
- procedure CalcBeatable(var board:TBoard);
+ procedure CalcBeatable(var board:TBoard;out beatable:TBeatable);
   var
    x,y,i:integer;
    v,whitecnt,blackcnt:byte;
-   bit:integer;
+   pieceMask:integer;
   begin
    with board do
    for y:=0 to 7 do
@@ -66,201 +78,201 @@ implementation
      v:=0;
      beatable[x,y]:=0;
      whitecnt:=0; blackcnt:=0;
-     bit:=0;
-     // определить под боем ли поле x,y
-     // пешки
-     if (y>1) and (x>0) and (field[x-1,y-1]=PawnWhite) then bit:=1;
-     if (y>1) and (x<7) and (field[x+1,y-1]=PawnWhite) then bit:=1;
+     pieceMask:=0;
+     // РѕРїСЂРµРґРµР»РёС‚СЊ РїРѕРґ Р±РѕРµРј Р»Рё РїРѕР»Рµ x,y
+     // РїРµС€РєРё
+     if (y>1) and (x>0) and (GetCell(x-1,y-1)=PawnWhite) then pieceMask:=1;
+     if (y>1) and (x<7) and (GetCell(x+1,y-1)=PawnWhite) then pieceMask:=1;
 
-     if bit=0 then begin // кони
-      if (x>1) and (y>0) and (field[x-2,y-1]=KnightWhite) then bit:=2;
-      if (x>1) and (y<7) and (field[x-2,y+1]=KnightWhite) then bit:=2;
-      if (x<6) and (y>0) and (field[x+2,y-1]=KnightWhite) then bit:=2;
-      if (x<6) and (y<7) and (field[x+2,y+1]=KnightWhite) then bit:=2;
-      if (x>0) and (y>1) and (field[x-1,y-2]=KnightWhite) then bit:=2;
-      if (x<7) and (y>1) and (field[x+1,y-2]=KnightWhite) then bit:=2;
-      if (x>0) and (y<6) and (field[x-1,y+2]=KnightWhite) then bit:=2;
-      if (x<7) and (y<6) and (field[x+1,y+2]=KnightWhite) then bit:=2;
+     if pieceMask=0 then begin // РєРѕРЅРё
+      if (x>1) and (y>0) and (GetCell(x-2,y-1)=KnightWhite) then pieceMask:=2;
+      if (x>1) and (y<7) and (GetCell(x-2,y+1)=KnightWhite) then pieceMask:=2;
+      if (x<6) and (y>0) and (GetCell(x+2,y-1)=KnightWhite) then pieceMask:=2;
+      if (x<6) and (y<7) and (GetCell(x+2,y+1)=KnightWhite) then pieceMask:=2;
+      if (x>0) and (y>1) and (GetCell(x-1,y-2)=KnightWhite) then pieceMask:=2;
+      if (x<7) and (y>1) and (GetCell(x+1,y-2)=KnightWhite) then pieceMask:=2;
+      if (x>0) and (y<6) and (GetCell(x-1,y+2)=KnightWhite) then pieceMask:=2;
+      if (x<7) and (y<6) and (GetCell(x+1,y+2)=KnightWhite) then pieceMask:=2;
      end;
-     if bit=0 then begin
-      for i:=1 to 7 do begin // вправо-вверх
+     if pieceMask=0 then begin
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ-РІРІРµСЂС…
        if (x+i>7) or (y+i>7) then break;
-       case field[x+i,y+i] of
-        BishopWhite:bit:=bit or 4;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y+i) of
+        BishopWhite:pieceMask:=pieceMask or 4;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y+i]<>0 then break;
+       if CellOccupied(x+i,y+i) then break;
       end;
-      for i:=1 to 7 do begin // вправо-вниз
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ-РІРЅРёР·
        if (x+i>7) or (y-i<0) then break;
-       case field[x+i,y-i] of
-        BishopWhite:bit:=bit or 4;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y-i) of
+        BishopWhite:pieceMask:=pieceMask or 4;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y-i]<>0 then break;
+       if CellOccupied(x+i,y-i) then break;
       end;
-      for i:=1 to 7 do begin // влево-вверх
+      for i:=1 to 7 do begin // РІР»РµРІРѕ-РІРІРµСЂС…
        if (x-i<0) or (y+i>7) then break;
-       case field[x-i,y+i] of
-        BishopWhite:bit:=bit or 4;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y+i) of
+        BishopWhite:pieceMask:=pieceMask or 4;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y+i]<>0 then break;
+       if CellOccupied(x-i,y+i) then break;
       end;
-      for i:=1 to 7 do begin // влево-вниз
+      for i:=1 to 7 do begin // РІР»РµРІРѕ-РІРЅРёР·
        if (x-i<0) or (y-i<0) then break;
-       case field[x-i,y-i] of
-        BishopWhite:bit:=bit or 4;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y-i) of
+        BishopWhite:pieceMask:=pieceMask or 4;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y-i]<>0 then break;
+       if GetCell(x-i,y-i)<>0 then break;
       end;
      end;
-     if bit and 7=0 then begin // поле не бито пешкой/конём/слоном
-      for i:=1 to 7 do begin // вправо
+     if pieceMask and 7=0 then begin // РїРѕР»Рµ РЅРµ Р±РёС‚Рѕ РїРµС€РєРѕР№/РєРѕРЅС‘Рј/СЃР»РѕРЅРѕРј
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ
        if (x+i>7) then break;
-       case field[x+i,y] of
-        RookWhite:bit:=bit or 8;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y) of
+        RookWhite:pieceMask:=pieceMask or 8;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y]<>0 then break;
+       if GetCell(x+i,y)<>0 then break;
       end;
-      for i:=1 to 7 do begin // влево
+      for i:=1 to 7 do begin // РІР»РµРІРѕ
        if (x-i<0) then break;
-       case field[x-i,y] of
-        RookWhite:bit:=bit or 8;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y) of
+        RookWhite:pieceMask:=pieceMask or 8;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y]<>0 then break;
+       if GetCell(x-i,y)<>0 then break;
       end;
-      for i:=1 to 7 do begin // вверх
+      for i:=1 to 7 do begin // РІРІРµСЂС…
        if (y+i>7) then break;
-       case field[x,y+i] of
-        RookWhite:bit:=bit or 8;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x,y+i) of
+        RookWhite:pieceMask:=pieceMask or 8;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x,y+i]<>0 then break;
+       if GetCell(x,y+i)<>0 then break;
       end;
-      for i:=1 to 7 do begin // вниз
+      for i:=1 to 7 do begin // РІРЅРёР·
        if (y-i<0) then break;
-       case field[x,y-i] of
-        RookWhite:bit:=bit or 8;
-        QueenWhite:bit:=bit or 16;
-        KingWhite:if i=1 then bit:=bit or 32;
+       case GetCell(x,y-i) of
+        RookWhite:pieceMask:=pieceMask or 8;
+        QueenWhite:pieceMask:=pieceMask or 16;
+        KingWhite:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x,y-i]<>0 then break;
+       if GetCell(x,y-i)<>0 then break;
       end;
      end;
-     if bit>0 then begin
+     if pieceMask>0 then begin
       beatable[x,y]:=White+1;
-      while bit and 1=0 do begin
-       inc(beatable[x,y]); bit:=bit shr 1;
+      while pieceMask and 1=0 do begin
+       inc(beatable[x,y]); pieceMask:=pieceMask shr 1;
       end;
      end;
 
-     bit:=0;
-     // определить под боем ли поле x,y
-     // пешки
-     if (y<6) and (x>0) and (field[x-1,y+1]=PawnBlack) then bit:=1;
-     if (y<6) and (x<7) and (field[x+1,y+1]=PawnBlack) then bit:=1;
+     pieceMask:=0;
+     // РѕРїСЂРµРґРµР»РёС‚СЊ РїРѕРґ Р±РѕРµРј Р»Рё РїРѕР»Рµ x,y
+     // РїРµС€РєРё
+     if (y<6) and (x>0) and (GetCell(x-1,y+1)=PawnBlack) then pieceMask:=1;
+     if (y<6) and (x<7) and (GetCell(x+1,y+1)=PawnBlack) then pieceMask:=1;
 
-     if bit=0 then begin // кони
-      if (x>1) and (y>0) and (field[x-2,y-1]=KnightBlack) then bit:=2;
-      if (x>1) and (y<7) and (field[x-2,y+1]=KnightBlack) then bit:=2;
-      if (x<6) and (y>0) and (field[x+2,y-1]=KnightBlack) then bit:=2;
-      if (x<6) and (y<7) and (field[x+2,y+1]=KnightBlack) then bit:=2;
-      if (x>0) and (y>1) and (field[x-1,y-2]=KnightBlack) then bit:=2;
-      if (x<7) and (y>1) and (field[x+1,y-2]=KnightBlack) then bit:=2;
-      if (x>0) and (y<6) and (field[x-1,y+2]=KnightBlack) then bit:=2;
-      if (x<7) and (y<6) and (field[x+1,y+2]=KnightBlack) then bit:=2;
+     if pieceMask=0 then begin // РєРѕРЅРё
+      if (x>1) and (y>0) and (GetCell(x-2,y-1)=KnightBlack) then pieceMask:=2;
+      if (x>1) and (y<7) and (GetCell(x-2,y+1)=KnightBlack) then pieceMask:=2;
+      if (x<6) and (y>0) and (GetCell(x+2,y-1)=KnightBlack) then pieceMask:=2;
+      if (x<6) and (y<7) and (GetCell(x+2,y+1)=KnightBlack) then pieceMask:=2;
+      if (x>0) and (y>1) and (GetCell(x-1,y-2)=KnightBlack) then pieceMask:=2;
+      if (x<7) and (y>1) and (GetCell(x+1,y-2)=KnightBlack) then pieceMask:=2;
+      if (x>0) and (y<6) and (GetCell(x-1,y+2)=KnightBlack) then pieceMask:=2;
+      if (x<7) and (y<6) and (GetCell(x+1,y+2)=KnightBlack) then pieceMask:=2;
      end;
-     if bit=0 then begin
-      for i:=1 to 7 do begin // вправо-вверх
+     if pieceMask=0 then begin
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ-РІРІРµСЂС…
        if (x+i>7) or (y+i>7) then break;
-       case field[x+i,y+i] of
-        BishopBlack:bit:=bit or 4;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y+i) of
+        BishopBlack:pieceMask:=pieceMask or 4;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y+i]<>0 then break;
+       if CellOccupied(x+i,y+i) then break;
       end;
-      for i:=1 to 7 do begin // вправо-вниз
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ-РІРЅРёР·
        if (x+i>7) or (y-i<0) then break;
-       case field[x+i,y-i] of
-        BishopBlack:bit:=bit or 4;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y-i) of
+        BishopBlack:pieceMask:=pieceMask or 4;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y-i]<>0 then break;
+       if CellOccupied(x+i,y-i) then break;
       end;
-      for i:=1 to 7 do begin // влево-вверх
+      for i:=1 to 7 do begin // РІР»РµРІРѕ-РІРІРµСЂС…
        if (x-i<0) or (y+i>7) then break;
-       case field[x-i,y+i] of
-        BishopBlack:bit:=bit or 4;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y+i) of
+        BishopBlack:pieceMask:=pieceMask or 4;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y+i]<>0 then break;
+       if CellOccupied(x-i,y+i) then break;
       end;
-      for i:=1 to 7 do begin // влево-вниз
+      for i:=1 to 7 do begin // РІР»РµРІРѕ-РІРЅРёР·
        if (x-i<0) or (y-i<0) then break;
-       case field[x-i,y-i] of
-        BishopBlack:bit:=bit or 4;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y-i) of
+        BishopBlack:pieceMask:=pieceMask or 4;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y-i]<>0 then break;
+       if CellOccupied(x-i,y-i) then break;
       end;
      end;
-     if bit and 7=0 then begin // поле не бито пешкой/конём/слоном
-      for i:=1 to 7 do begin // вправо
+     if pieceMask and 7=0 then begin // РїРѕР»Рµ РЅРµ Р±РёС‚Рѕ РїРµС€РєРѕР№/РєРѕРЅС‘Рј/СЃР»РѕРЅРѕРј
+      for i:=1 to 7 do begin // РІРїСЂР°РІРѕ
        if (x+i>7) then break;
-       case field[x+i,y] of
-        RookBlack:bit:=bit or 8;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x+i,y) of
+        RookBlack:pieceMask:=pieceMask or 8;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x+i,y]<>0 then break;
+       if CellOccupied(x+i,y) then break;
       end;
-      for i:=1 to 7 do begin // влево
+      for i:=1 to 7 do begin // РІР»РµРІРѕ
        if (x-i<0) then break;
-       case field[x-i,y] of
-        RookBlack:bit:=bit or 8;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x-i,y) of
+        RookBlack:pieceMask:=pieceMask or 8;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x-i,y]<>0 then break;
+       if CellOccupied(x-i,y) then break;
       end;
-      for i:=1 to 7 do begin // вверх
+      for i:=1 to 7 do begin // РІРІРµСЂС…
        if (y+i>7) then break;
-       case field[x,y+i] of
-        RookBlack:bit:=bit or 8;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x,y+i) of
+        RookBlack:pieceMask:=pieceMask or 8;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x,y+i]<>0 then break;
+       if CellOccupied(x,y+i) then break;
       end;
-      for i:=1 to 7 do begin // вниз
+      for i:=1 to 7 do begin // РІРЅРёР·
        if (y-i<0) then break;
-       case field[x,y-i] of
-        RookBlack:bit:=bit or 8;
-        QueenBlack:bit:=bit or 16;
-        KingBlack:if i=1 then bit:=bit or 32;
+       case GetCell(x,y-i) of
+        RookBlack:pieceMask:=pieceMask or 8;
+        QueenBlack:pieceMask:=pieceMask or 16;
+        KingBlack:if i=1 then pieceMask:=pieceMask or 32;
        end;
-       if field[x,y-i]<>0 then break;
+       if CellOccupied(x,y-i) then break;
       end;
      end;
-     if bit>0 then begin
+     if pieceMask>0 then begin
       beatable[x,y]:=beatable[x,y] or (Black+$8);
-      while bit and 1=0 do begin
-       inc(beatable[x,y],$8); bit:=bit shr 1;
+      while pieceMask and 1=0 do begin
+       inc(beatable[x,y],$8); pieceMask:=pieceMask shr 1;
       end;
      end;
     end;
@@ -271,6 +283,7 @@ implementation
    i,j,x,y:integer;
    v,color,color2,m,n,l:byte;
    pb:PByte;
+   beatable:TBeatable;
   procedure AddMove(var pb:PByte;m:byte); inline;
    begin
     inc(pb);
@@ -281,91 +294,91 @@ implementation
     pb:=@moves;
     x:=fromPos and $F;
     y:=fromPos shr 4;
-    v:=field[x,y] and $F;
-    color:=field[x,y] and ColorMask;
+    v:=GetPieceType(x,y);
+    color:=GetPieceColor(x,y);
     if v=Pawn then begin
       if color=White then begin
-       // белая пешка
-       if (y<7) and (field[x,y+1]=0) then AddMove(pb,fromPos+$10);
-       if (y=1) and (field[x,2]=0) and (field[x,3]=0) then AddMove(pb,fromPos+$20);
-       if (x>0) and (field[x-1,y+1] and ColorMask=Black) then AddMove(pb,fromPos+$10-1);
-       if (x<7) and (field[x+1,y+1] and ColorMask=Black) then AddMove(pb,fromPos+$10+1);
-       // взятие на проходе
-       if (y=4) and (x>0) and (field[x-1,y]=PawnBlack) and
+       // Р±РµР»Р°СЏ РїРµС€РєР°
+       if (y<7) and (GetCell(x,y+1)=0) then AddMove(pb,fromPos+$10);
+       if (y=1) and (GetCell(x,2)=0) and (GetCell(x,3)=0) then AddMove(pb,fromPos+$20);
+       if (x>0) and (GetCell(x-1,y+1) and ColorMask=Black) then AddMove(pb,fromPos+$10-1);
+       if (x<7) and (GetCell(x+1,y+1) and ColorMask=Black) then AddMove(pb,fromPos+$10+1);
+       // РІР·СЏС‚РёРµ РЅР° РїСЂРѕС…РѕРґРµ
+       if (y=4) and (x>0) and (GetCell(x-1,y)=PawnBlack) and
          (lastTurnFrom=fromPos+$20-1) and (lastTurnTo=fromPos-1) then AddMove(pb,fromPos+$10-1);
-       if (y=4) and (x<70) and (field[x+1,y]=PawnBlack) and
+       if (y=4) and (x<70) and (GetCell(x+1,y)=PawnBlack) and
          (lastTurnFrom=fromPos+$20+1) and (lastTurnTo=fromPos+1) then AddMove(pb,fromPos+$10+1);
       end else begin
-       // черная пешка
-       if (y>0) and (field[x,y-1]=0) then AddMove(pb,fromPos-$10);
-       if (y=6) and (field[x,5]=0) and (field[x,4]=0) then AddMove(pb,fromPos-$20);
-       if (x>0) and (field[x-1,y-1] and ColorMask=White) then AddMove(pb,fromPos-$10-1);
-       if (x<7) and (field[x+1,y-1] and ColorMask=White) then AddMove(pb,fromPos-$10+1);
-       // взятие на проходе
-       if (y=3) and (x>0) and (field[x-1,y]=PawnWhite) and
+       // С‡РµСЂРЅР°СЏ РїРµС€РєР°
+       if (y>0) and (GetCell(x,y-1)=0) then AddMove(pb,fromPos-$10);
+       if (y=6) and (GetCell(x,5)=0) and (GetCell(x,4)=0) then AddMove(pb,fromPos-$20);
+       if (x>0) and (GetCell(x-1,y-1) and ColorMask=White) then AddMove(pb,fromPos-$10-1);
+       if (x<7) and (GetCell(x+1,y-1) and ColorMask=White) then AddMove(pb,fromPos-$10+1);
+       // РІР·СЏС‚РёРµ РЅР° РїСЂРѕС…РѕРґРµ
+       if (y=3) and (x>0) and (GetCell(x-1,y)=PawnWhite) and
          (lastTurnFrom=fromPos-$20-1) and (lastTurnTo=fromPos-1) then AddMove(pb,fromPos-$10-1);
-       if (y=3) and (x<70) and (field[x+1,y]=PawnWhite) and
+       if (y=3) and (x<70) and (GetCell(x+1,y)=PawnWhite) and
          (lastTurnFrom=fromPos-$20+1) and (lastTurnTo=fromPos+1) then AddMove(pb,fromPos-$10+1);
       end;
       exit;
      end;
 
     if v=Knight then begin
-     if (x>0) and (y>1) and (field[x-1,y-2] and ColorMask<>color) then AddMove(pb,fromPos-$20-1);
-     if (x<7) and (y>1) and (field[x+1,y-2] and ColorMask<>color) then AddMove(pb,fromPos-$20+1);
+     if (x>0) and (y>1) and (GetCell(x-1,y-2) and ColorMask<>color) then AddMove(pb,fromPos-$20-1);
+     if (x<7) and (y>1) and (GetCell(x+1,y-2) and ColorMask<>color) then AddMove(pb,fromPos-$20+1);
 
-     if (x>0) and (y<6) and (field[x-1,y+2] and ColorMask<>color) then AddMove(pb,fromPos+$20-1);
-     if (x<7) and (y<6) and (field[x+1,y+2] and ColorMask<>color) then AddMove(pb,fromPos+$20+1);
+     if (x>0) and (y<6) and (GetCell(x-1,y+2) and ColorMask<>color) then AddMove(pb,fromPos+$20-1);
+     if (x<7) and (y<6) and (GetCell(x+1,y+2) and ColorMask<>color) then AddMove(pb,fromPos+$20+1);
 
-     if (x>1) and (y>0) and (field[x-2,y-1] and ColorMask<>color) then AddMove(pb,fromPos-$10-2);
-     if (x>1) and (y<7) and (field[x-2,y+1] and ColorMask<>color) then AddMove(pb,fromPos+$10-2);
+     if (x>1) and (y>0) and (GetCell(x-2,y-1) and ColorMask<>color) then AddMove(pb,fromPos-$10-2);
+     if (x>1) and (y<7) and (GetCell(x-2,y+1) and ColorMask<>color) then AddMove(pb,fromPos+$10-2);
 
-     if (x<6) and (y>0) and (field[x+2,y-1] and ColorMask<>color) then AddMove(pb,fromPos-$10+2);
-     if (x<6) and (y<7) and (field[x+2,y+1] and ColorMask<>color) then AddMove(pb,fromPos+$10+2);
+     if (x<6) and (y>0) and (GetCell(x+2,y-1) and ColorMask<>color) then AddMove(pb,fromPos-$10+2);
+     if (x<6) and (y<7) and (GetCell(x+2,y+1) and ColorMask<>color) then AddMove(pb,fromPos+$10+2);
      exit;
     end;
 
     if v=King then begin
-     // нельзя ходить на поле под боем
-     if color=white then color2:=black else color2:=white;
-     field[x,y]:=0;
-     CalcBeatable(board);
-     field[x,y]:=King+color;
+     // РЅРµР»СЊР·СЏ С…РѕРґРёС‚СЊ РЅР° РїРѕР»Рµ РїРѕРґ Р±РѕРµРј
+     if color=White then color2:=Black else color2:=White;
+     SetCell(x,y,0); // РІСЂРµРјРµРЅРЅРѕ СѓР±РµСЂС‘Рј РєРѕСЂРѕР»СЏ
+     CalcBeatable(board,beatable);
+     SetCell(x,y,King+color);
 
      if (x>0) and (y>0) and
-        (field[x-1,y-1] and ColorMask<>color) and (beatable[x-1,y-1] and color2=0) then AddMove(pb,fromPos-$10-1);
+        (GetCell(x-1,y-1) and ColorMask<>color) and (beatable[x-1,y-1] and color2=0) then AddMove(pb,fromPos-$10-1);
      if (x>0) and (y<7) and
-        (field[x-1,y+1] and ColorMask<>color) and (beatable[x-1,y+1] and color2=0) then AddMove(pb,fromPos+$10-1);
+        (GetCell(x-1,y+1) and ColorMask<>color) and (beatable[x-1,y+1] and color2=0) then AddMove(pb,fromPos+$10-1);
      if (x<7) and (y>0) and
-        (field[x+1,y-1] and ColorMask<>color) and (beatable[x+1,y-1] and color2=0) then AddMove(pb,fromPos-$10+1);
+        (GetCell(x+1,y-1) and ColorMask<>color) and (beatable[x+1,y-1] and color2=0) then AddMove(pb,fromPos-$10+1);
      if (x<7) and (y<7) and
-        (field[x+1,y+1] and ColorMask<>color) and (beatable[x+1,y+1] and color2=0) then AddMove(pb,fromPos+$10+1);
+        (GetCell(x+1,y+1) and ColorMask<>color) and (beatable[x+1,y+1] and color2=0) then AddMove(pb,fromPos+$10+1);
 
-     if (x>0) and (field[x-1,y] and ColorMask<>color) and (beatable[x-1,y] and color2=0) then AddMove(pb,fromPos-1);
-     if (x<7) and (field[x+1,y] and ColorMask<>color) and (beatable[x+1,y] and color2=0) then AddMove(pb,fromPos+1);
-     if (y>0) and (field[x,y-1] and ColorMask<>color) and (beatable[x,y-1] and color2=0) then AddMove(pb,fromPos-$10);
-     if (y<7) and (field[x,y+1] and ColorMask<>color) and (beatable[x,y+1] and color2=0) then AddMove(pb,fromPos+$10);
+     if (x>0) and (GetCell(x-1,y) and ColorMask<>color) and (beatable[x-1,y] and color2=0) then AddMove(pb,fromPos-1);
+     if (x<7) and (GetCell(x+1,y) and ColorMask<>color) and (beatable[x+1,y] and color2=0) then AddMove(pb,fromPos+1);
+     if (y>0) and (GetCell(x,y-1) and ColorMask<>color) and (beatable[x,y-1] and color2=0) then AddMove(pb,fromPos-$10);
+     if (y<7) and (GetCell(x,y+1) and ColorMask<>color) and (beatable[x,y+1] and color2=0) then AddMove(pb,fromPos+$10);
 
-     // Рокировка...
+     // Р РѕРєРёСЂРѕРІРєР°...
      if (x=4) and (y=0) and (color=White) and (rFlags and $F<3) then begin
-      // Возможна рокировка хотя бы в одну сторону
-      // длинная рокировка
-      if (rFlags and 1=0) and (field[1,0] or field[2,0] or field[3,0]=0) and
+      // Р’РѕР·РјРѕР¶РЅР° СЂРѕРєРёСЂРѕРІРєР° С…РѕС‚СЏ Р±С‹ РІ РѕРґРЅСѓ СЃС‚РѕСЂРѕРЅСѓ
+      // РґР»РёРЅРЅР°СЏ СЂРѕРєРёСЂРѕРІРєР°
+      if (rFlags and 1=0) and (GetCell(1,0) or GetCell(2,0) or GetCell(3,0)=0) and
          ((beatable[2,0] or beatable[3,0] or beatable[4,0]) and Black=0) then
            AddMove(pb,fromPos-2);
-      // короткая рокировка
-      if (rFlags and 2=0) and (field[5,0] or field[6,0]=0) and
+      // РєРѕСЂРѕС‚РєР°СЏ СЂРѕРєРёСЂРѕРІРєР°
+      if (rFlags and 2=0) and (GetCell(5,0) or GetCell(6,0)=0) and
          ((beatable[4,0] or beatable[5,0] or beatable[6,0]) and Black=0) then
            AddMove(pb,fromPos+2);
      end;
      if (x=4) and (y=7) and (color=Black) and (rFlags and $F0<$30) then begin
-      // Возможна рокировка хотя бы в одну сторону
-      // длинная рокировка
-      if (rFlags and $10=0) and (field[1,7] or field[2,7] or field[3,7]=0) and
+      // Р’РѕР·РјРѕР¶РЅР° СЂРѕРєРёСЂРѕРІРєР° С…РѕС‚СЏ Р±С‹ РІ РѕРґРЅСѓ СЃС‚РѕСЂРѕРЅСѓ
+      // РґР»РёРЅРЅР°СЏ СЂРѕРєРёСЂРѕРІРєР°
+      if (rFlags and $10=0) and (GetCell(1,7) or GetCell(2,7) or GetCell(3,7)=0) and
          ((beatable[2,7] or beatable[3,7] or beatable[4,7]) and White=0) then
            AddMove(pb,fromPos-2);
-      // короткая рокировка
-      if (rFlags and $20=0) and (field[5,7] or field[6,7]=0) and
+      // РєРѕСЂРѕС‚РєР°СЏ СЂРѕРєРёСЂРѕРІРєР°
+      if (rFlags and $20=0) and (GetCell(5,7) or GetCell(6,7)=0) and
          ((beatable[4,7] or beatable[5,7] or beatable[6,7]) and White=0) then
            AddMove(pb,fromPos+2);
      end;
@@ -373,74 +386,74 @@ implementation
     end;
 
     if v in [Rook,Queen] then begin
-      // ладья
+      // Р»Р°РґСЊСЏ
       m:=fromPos;
       for i:=x+1 to 7 do begin
-       if field[i,y] and ColorMask=color then break;
+       if GetCell(i,y) and ColorMask=color then break;
        m:=m+1;
        AddMove(pb,m);
-       if field[i,y]<>0 then break;
+       if GetCell(i,y)<>0 then break;
       end;
       m:=fromPos;
       for i:=x-1 downto 0 do begin
-       if field[i,y] and ColorMask=color then break;
+       if GetCell(i,y) and ColorMask=color then break;
        m:=m-1;
        AddMove(pb,m);
-       if field[i,y]<>0 then break;
+       if GetCell(i,y)<>0 then break;
       end;
       m:=fromPos;
       for i:=y+1 to 7 do begin
-       if field[x,i] and ColorMask=color then break;
+       if GetCell(x,i) and ColorMask=color then break;
        m:=m+$10;
        AddMove(pb,m);
-       if field[x,i]<>0 then break;
+       if GetCell(x,i)<>0 then break;
       end;
       m:=fromPos;
       for i:=y-1 downto 0 do begin
-       if field[x,i] and ColorMask=color then break;
+       if GetCell(x,i) and ColorMask=color then break;
        m:=m-$10;
        AddMove(pb,m);
-       if field[x,i]<>0 then break;
+       if GetCell(x,i)<>0 then break;
       end;
      end;
 
     if v in [Bishop,Queen] then begin
-     // Слон
+     // РЎР»РѕРЅ
      m:=fromPos;
      n:=x; l:=y;
      for i:=1 to 7 do begin
       inc(n); inc(l);
       m:=m+$10+1;
-      if (n>7) or (l>7) or (field[n,l] and ColorMask=color) then break;
+      if (n>7) or (l>7) or (GetCell(n,l) and ColorMask=color) then break;
       AddMove(pb,m);
-      if field[n,l]<>0 then break;
+      if GetCell(n,l)<>0 then break;
      end;
      m:=fromPos;
      n:=x; l:=y;
      for i:=1 to 7 do begin
       dec(n); inc(l);
       m:=m+$10-1;
-      if (n>7) or (l>7) or (field[n,l] and ColorMask=color) then break;
+      if (n>7) or (l>7) or (GetCell(n,l) and ColorMask=color) then break;
       AddMove(pb,m);
-      if field[n,l]<>0 then break;
+      if GetCell(n,l)<>0 then break;
      end;
      m:=fromPos;
      n:=x; l:=y;
      for i:=1 to 7 do begin
       inc(n); dec(l);
       m:=m-$10+1;
-      if (n>7) or (l>7) or (field[n,l] and ColorMask=color) then break;
+      if (n>7) or (l>7) or (GetCell(n,l) and ColorMask=color) then break;
       AddMove(pb,m);
-      if field[n,l]<>0 then break;
+      if GetCell(n,l)<>0 then break;
      end;
      m:=fromPos;
      n:=x; l:=y;
      for i:=1 to 7 do begin
       dec(n); dec(l);
       m:=m-$10-1;
-      if (n>7) or (l>7) or (field[n,l] and ColorMask=color) then break;
+      if (n>7) or (l>7) or (GetCell(n,l) and ColorMask=color) then break;
       AddMove(pb,m);
-      if field[n,l]<>0 then break;
+      if GetCell(n,l)<>0 then break;
      end;
     end;
    end;
@@ -456,23 +469,25 @@ implementation
     y:=from shr 4;
     nx:=target and $F;
     ny:=target shr 4;
-    v:=field[x,y];
-    field[x,y]:=0;
-    lastPiece:=field[nx,ny];
-    if field[nx,ny]>0 then flags:=flags or movBeat
+    // Move piece from (x,y) to (nx,xy)
+    v:=GetCell(x,y);
+    SetCell(x,y,0);
+    lastPiece:=GetCell(nx,ny);
+    if not CellIsEmpty(nx,ny) then flags:=flags or movBeat
      else flags:=flags and (not movBeat);
-    field[nx,ny]:=v;
-    // пешка -> ферзь
-    if (v=PawnWhite) and (ny=7) then field[nx,ny]:=QueenWhite;
-    if (v=PawnBlack) and (ny=0) then field[nx,ny]:=QueenBlack;
-    // пешка на проходе
-    if (ny=2) and (field[nx,ny+1]=PawnWhite) and (LastTurnFrom=nx+(ny-1) shl 4)
+    SetCell(nx,ny,v);
+
+    // РїРµС€РєР° -> С„РµСЂР·СЊ
+    if (v=PawnWhite) and (ny=7) then SetCell(nx,ny,QueenWhite);
+    if (v=PawnBlack) and (ny=0) then SetCell(nx,ny,QueenBlack);
+    // РїРµС€РєР° РЅР° РїСЂРѕС…РѕРґРµ
+    if (ny=2) and (GetCell(nx,ny+1)=PawnWhite) and (LastTurnFrom=nx+(ny-1) shl 4)
      and (LastTurnTo=nx+(ny+1) shl 4) then begin
-      field[nx,ny+1]:=0; board.flags:=board.flags or movBeat;
+      SetCell(nx,ny+1,0); board.flags:=board.flags or movBeat;
     end;
-    if (ny=5) and (field[nx,ny-1]=PawnBlack) and (LastTurnFrom=nx+(ny+1) shl 4)
+    if (ny=5) and (GetCell(nx,ny-1)=PawnBlack) and (LastTurnFrom=nx+(ny+1) shl 4)
      and (LastTurnTo=nx+(ny-1) shl 4) then begin
-      field[nx,ny-1]:=0;
+      SetCell(nx,ny-1,0);
     end;
 
     if v and $F=King then begin
@@ -480,16 +495,16 @@ implementation
       rFlags:=rFlags or $4
      else
       rFlags:=rFlags or $40;
-     // Рокировка
+     // Р РѕРєРёСЂРѕРІРєР°
      if (x=4) and (nx=2) then begin
-      field[3,y]:=field[0,y];
-      field[0,y]:=0;
+      SetCell(3,y,GetCell(0,y));
+      SetCell(0,y,0);
       if y=0 then rFlags:=rFlags or $8
        else rFlags:=rFlags or $80;
      end;
      if (x=4) and (nx=6) then begin
-      field[5,y]:=field[7,y];
-      field[7,y]:=0;
+      SetCell(5,y,GetCell(7,y));
+      SetCell(7,y,0);
       if y=0 then rFlags:=rFlags or $8
        else rFlags:=rFlags or $80;
      end;
@@ -505,13 +520,12 @@ implementation
       if (y=7) and (v and ColorMask=Black) then rFlags:=rFlags or $20;
      end;
 
-    WhiteTurn:=not WhiteTurn;
     LastTurnFrom:=from;
     LastTurnTo:=target;
    end;
   end;
 
- // проверяет был ли поставлен шах последним ходом и устанавливает флаг шаха если был
+ // РїСЂРѕРІРµСЂСЏРµС‚ Р±С‹Р» Р»Рё РїРѕСЃС‚Р°РІР»РµРЅ С€Р°С… РїРѕСЃР»РµРґРЅРёРј С…РѕРґРѕРј Рё СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С„Р»Р°Рі С€Р°С…Р° РµСЃР»Рё Р±С‹Р»
  function IsCheck(var b:TBoard):boolean;
   var
    i,j,k:integer;
@@ -522,135 +536,135 @@ implementation
     if WhiteTurn then
     for i:=0 to 7 do
      for j:=0 to 7 do
-      if field[i,j]=KingWhite then begin
-       // ладьей или ферзем вверх
+      if GetCell(i,j)=KingWhite then begin
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…
        for k:=j+1 to 7 do
-        if field[i,k] in [QueenBlack,RookBlack] then goto check
-         else if field[i,k]>0 then break;
-       // ладьей или ферзем вправо
+        if GetCell(i,k) in [QueenBlack,RookBlack] then goto check
+         else if CellOccupied(i,k) then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРїСЂР°РІРѕ
        for k:=i+1 to 7 do
-        if field[k,j] in [QueenBlack,RookBlack] then goto check
-         else if field[k,j]>0 then break;
-       // ладьей или ферзем влево
+        if GetCell(k,j) in [QueenBlack,RookBlack] then goto check
+         else if GetCell(k,j)>0 then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІР»РµРІРѕ
        for k:=i-1 downto 0 do
-        if field[k,j] in [QueenBlack,RookBlack] then goto check
-         else if field[k,j]>0 then break;
-       // ладьей или ферзем вниз
+        if GetCell(k,j) in [QueenBlack,RookBlack] then goto check
+         else if GetCell(k,j)>0 then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРЅРёР·
        for k:=j-1 downto 0 do
-        if field[i,k] in [QueenBlack,RookBlack] then goto check
-         else if field[i,k]>0 then break;
+        if GetCell(i,k) in [QueenBlack,RookBlack] then goto check
+         else if GetCell(i,k)>0 then break;
 
-       // слоном или ферзем вверх-вправо
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…-РІРїСЂР°РІРѕ
        for k:=1 to 7 do
         if (i+k>7) or (j+k>7) then break else
-         if field[i+k,j+k] in [QueenBlack,BishopBlack] then goto check
-          else if field[i+k,j+k]>0 then break;
-       // слоном или ферзем вверх-влево
+         if GetCell(i+k,j+k) in [QueenBlack,BishopBlack] then goto check
+          else if GetCell(i+k,j+k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…-РІР»РµРІРѕ
        for k:=1 to 7 do
         if (i-k<0) or (j+k>7) then break else
-         if field[i-k,j+k] in [QueenBlack,BishopBlack] then goto check
-          else if field[i-k,j+k]>0 then break;
-       // слоном или ферзем вниз-вправо
+         if GetCell(i-k,j+k) in [QueenBlack,BishopBlack] then goto check
+          else if GetCell(i-k,j+k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРЅРёР·-РІРїСЂР°РІРѕ
        for k:=1 to 7 do
         if (i+k>7) or (j-k<0) then break else
-         if field[i+k,j-k] in [QueenBlack,BishopBlack] then goto check
-          else if field[i+k,j-k]>0 then break;
-       // слоном или ферзем вниз-влево
+         if GetCell(i+k,j-k) in [QueenBlack,BishopBlack] then goto check
+          else if GetCell(i+k,j-k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРЅРёР·-РІР»РµРІРѕ
        for k:=1 to 7 do
         if (i-k<0) or (j-k<0) then break else
-         if field[i-k,j-k] in [QueenBlack,BishopBlack] then goto check
-          else if field[i-k,j-k]>0 then break;
+         if GetCell(i-k,j-k) in [QueenBlack,BishopBlack] then goto check
+          else if GetCell(i-k,j-k)>0 then break;
 
-       // конём
+       // РєРѕРЅС‘Рј
        if i-1>=0 then begin
-        if (j-2>=0) and (field[i-1,j-2]=KnightBlack) then goto check;
-        if (j+2<=7) and (field[i-1,j+2]=KnightBlack) then goto check;
+        if (j-2>=0) and (GetCell(i-1,j-2)=KnightBlack) then goto check;
+        if (j+2<=7) and (GetCell(i-1,j+2)=KnightBlack) then goto check;
        end;
        if i-2>=0 then begin
-        if (j-1>=0) and (field[i-2,j-1]=KnightBlack) then goto check;
-        if (j+1<=7) and (field[i-2,j+1]=KnightBlack) then goto check;
+        if (j-1>=0) and (GetCell(i-2,j-1)=KnightBlack) then goto check;
+        if (j+1<=7) and (GetCell(i-2,j+1)=KnightBlack) then goto check;
        end;
        if i+1<=7 then begin
-        if (j-2>=0) and (field[i+1,j-2]=KnightBlack) then goto check;
-        if (j+2<=7) and (field[i+1,j+2]=KnightBlack) then goto check;
+        if (j-2>=0) and (GetCell(i+1,j-2)=KnightBlack) then goto check;
+        if (j+2<=7) and (GetCell(i+1,j+2)=KnightBlack) then goto check;
        end;
        if i+2<=7 then begin
-        if (j-1>=0) and (field[i+2,j-1]=KnightBlack) then goto check;
-        if (j+1<=7) and (field[i+2,j+1]=KnightBlack) then goto check;
+        if (j-1>=0) and (GetCell(i+2,j-1)=KnightBlack) then goto check;
+        if (j+1<=7) and (GetCell(i+2,j+1)=KnightBlack) then goto check;
        end;
 
-       // Пешкой
+       // РџРµС€РєРѕР№
        if (j<6) then begin
-        if (i>0) and (field[i-1,j+1]=pawnBlack) then goto check;
-        if (i<7) and (field[i+1,j+1]=pawnBlack) then goto check;
+        if (i>0) and (GetCell(i-1,j+1)=pawnBlack) then goto check;
+        if (i<7) and (GetCell(i+1,j+1)=pawnBlack) then goto check;
        end;
       end;
     
-    // Если ход черных - проверить черного короля
+    // Р•СЃР»Рё С…РѕРґ С‡РµСЂРЅС‹С… - РїСЂРѕРІРµСЂРёС‚СЊ С‡РµСЂРЅРѕРіРѕ РєРѕСЂРѕР»СЏ
     if not WhiteTurn then
     for i:=0 to 7 do
      for j:=0 to 7 do
-      if field[i,j]=KingBlack then begin
-       // ладьей или ферзем вниз
+      if GetCell(i,j)=KingBlack then begin
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРЅРёР·
        for k:=j-1 downto 0 do
-        if field[i,k] in [QueenWhite,RookWhite] then goto check
-         else if field[i,k]>0 then break;
-       // ладьей или ферзем вправо
+        if GetCell(i,k) in [QueenWhite,RookWhite] then goto check
+         else if GetCell(i,k)>0 then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРїСЂР°РІРѕ
        for k:=i+1 to 7 do
-        if field[k,j] in [QueenWhite,RookWhite] then goto check
-         else if field[k,j]>0 then break;
-       // ладьей или ферзем влево
+        if GetCell(k,j) in [QueenWhite,RookWhite] then goto check
+         else if GetCell(k,j)>0 then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІР»РµРІРѕ
        for k:=i-1 downto 0 do
-        if field[k,j] in [QueenWhite,RookWhite] then goto check
-         else if field[k,j]>0 then break;
-       // ладьей или ферзем вверх
+        if GetCell(k,j) in [QueenWhite,RookWhite] then goto check
+         else if GetCell(k,j)>0 then break;
+       // Р»Р°РґСЊРµР№ РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…
        for k:=j+1 to 7 do
-        if field[i,k] in [QueenWhite,RookWhite] then goto check
-         else if field[i,k]>0 then break;
+        if GetCell(i,k) in [QueenWhite,RookWhite] then goto check
+         else if GetCell(i,k)>0 then break;
 
-       // слоном или ферзем вниз-вправо
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРЅРёР·-РІРїСЂР°РІРѕ
        for k:=1 to 7 do
         if (i+k>7) or (j-k<0) then break else
-         if field[i+k,j-k] in [QueenWhite,BishopWhite] then goto check
-          else if field[i+k,j-k]>0 then break;
-       // слоном или ферзем вниз-влево
+         if GetCell(i+k,j-k) in [QueenWhite,BishopWhite] then goto check
+          else if GetCell(i+k,j-k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРЅРёР·-РІР»РµРІРѕ
        for k:=1 to 7 do
         if (i-k<0) or (j-k<0) then break else
-         if field[i-k,j-k] in [QueenWhite,BishopWhite] then goto check
-          else if field[i-k,j-k]>0 then break;
-       // слоном или ферзем вверх-вправо
+         if GetCell(i-k,j-k) in [QueenWhite,BishopWhite] then goto check
+          else if GetCell(i-k,j-k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…-РІРїСЂР°РІРѕ
        for k:=1 to 7 do
         if (i+k>7) or (j+k>7) then break else
-         if field[i+k,j+k] in [QueenWhite,BishopWhite] then goto check
-          else if field[i+k,j+k]>0 then break;
-       // слоном или ферзем вверх-влево
+         if GetCell(i+k,j+k) in [QueenWhite,BishopWhite] then goto check
+          else if GetCell(i+k,j+k)>0 then break;
+       // СЃР»РѕРЅРѕРј РёР»Рё С„РµСЂР·РµРј РІРІРµСЂС…-РІР»РµРІРѕ
        for k:=1 to 7 do
         if (i-k<0) or (j+k>7) then break else
-         if field[i-k,j+k] in [QueenWhite,BishopWhite] then goto check
-          else if field[i-k,j+k]>0 then break;
+         if GetCell(i-k,j+k) in [QueenWhite,BishopWhite] then goto check
+          else if GetCell(i-k,j+k)>0 then break;
 
-       // конём
+       // РєРѕРЅС‘Рј
        if i-1>=0 then begin
-        if (j-2>=0) and (field[i-1,j-2]=KnightWhite) then goto check;
-        if (j+2<=7) and (field[i-1,j+2]=KnightWhite) then goto check;
+        if (j-2>=0) and (GetCell(i-1,j-2)=KnightWhite) then goto check;
+        if (j+2<=7) and (GetCell(i-1,j+2)=KnightWhite) then goto check;
        end;
        if i-2>=0 then begin
-        if (j-1>=0) and (field[i-2,j-1]=KnightWhite) then goto check;
-        if (j+1<=7) and (field[i-2,j+1]=KnightWhite) then goto check;
+        if (j-1>=0) and (GetCell(i-2,j-1)=KnightWhite) then goto check;
+        if (j+1<=7) and (GetCell(i-2,j+1)=KnightWhite) then goto check;
        end;
        if i+1<=7 then begin
-        if (j-2>=0) and (field[i+1,j-2]=KnightWhite) then goto check;
-        if (j+2<=7) and (field[i+1,j+2]=KnightWhite) then goto check;
+        if (j-2>=0) and (GetCell(i+1,j-2)=KnightWhite) then goto check;
+        if (j+2<=7) and (GetCell(i+1,j+2)=KnightWhite) then goto check;
        end;
        if i+2<=7 then begin
-        if (j-1>=0) and (field[i+2,j-1]=KnightWhite) then goto check;
-        if (j+1<=7) and (field[i+2,j+1]=KnightWhite) then goto check;
+        if (j-1>=0) and (GetCell(i+2,j-1)=KnightWhite) then goto check;
+        if (j+1<=7) and (GetCell(i+2,j+1)=KnightWhite) then goto check;
        end;
 
-       // Пешкой
+       // РџРµС€РєРѕР№
        if (j>1) then begin
-        if (i>0) and (field[i-1,j-1]=pawnWhite) then goto check;
-        if (i<7) and (field[i+1,j-1]=pawnWhite) then goto check;
+        if (i>0) and (GetCell(i-1,j-1)=pawnWhite) then goto check;
+        if (i<7) and (GetCell(i+1,j-1)=pawnWhite) then goto check;
        end;
       end;
    end;
@@ -658,6 +672,22 @@ implementation
    exit;
   check:
    b.flags:=b.flags or movCheck;
+  end;
+
+ procedure ResetCounters;
+  begin
+   getAvailMovesCount:=0;
+   calcBeatableCount:=0;
+   doMoveCount:=0;
+   isCheckCount:=0;
+  end;
+
+ procedure LogCounters;
+  begin
+   {$IFDEF PERFCOUNT}
+   LogMessage('Logic counters: GAM=%d, CB=%d, DM=%d, IC=%d',
+    [getAvailMovesCount,calcBeatableCount,doMoveCount,isCheckCount]);
+   {$ENDIF}
   end;
 
 end.

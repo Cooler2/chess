@@ -5,7 +5,7 @@ object MainForm: TMainForm
   BorderStyle = bsSingle
   Caption = 'Spider'#39's Chess'
   ClientHeight = 534
-  ClientWidth = 680
+  ClientWidth = 677
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -22,8 +22,8 @@ object MainForm: TMainForm
   PixelsPerInch = 96
   TextHeight = 13
   object SwapBtn: TSpeedButton
-    Left = 518
-    Top = 4
+    Left = 517
+    Top = 29
     Width = 154
     Height = 25
     Hint = #1055#1077#1088#1077#1074#1077#1088#1085#1091#1090#1100' '#1076#1086#1089#1082#1091': '#1082#1086#1084#1087#1100#1102#1090#1077#1088' '#1080#1075#1088#1072#1077#1090' '#1090#1086#1083#1100#1082#1086' '#1079#1072' '#1074#1077#1088#1093#1085#1102#1102' '#1089#1090#1086#1088#1086#1085#1091
@@ -31,12 +31,12 @@ object MainForm: TMainForm
     OnClick = SwapBtnClick
   end
   object ResetBtn: TSpeedButton
-    Left = 518
-    Top = 30
+    Left = 517
+    Top = 2
     Width = 154
     Height = 25
     Hint = #1042#1099#1089#1090#1072#1074#1080#1090#1100' '#1085#1072#1095#1072#1083#1100#1085#1091#1102' '#1087#1086#1079#1080#1094#1080#1102
-    Caption = #1053#1072#1095#1072#1083#1100#1085#1072#1103' '#1087#1086#1079#1080#1094#1080#1103
+    Caption = #1053#1086#1074#1072#1103' '#1080#1075#1088#1072
     OnClick = ResetBtnClick
   end
   object UndoBtn: TSpeedButton
@@ -108,7 +108,7 @@ object MainForm: TMainForm
     Height = 32
     AllowAllUp = True
     GroupIndex = 1
-    Caption = 'Start AI!'
+    Caption = 'Start AI'
     Font.Charset = DEFAULT_CHARSET
     Font.Color = clWindowText
     Font.Height = -13
@@ -122,23 +122,16 @@ object MainForm: TMainForm
     Top = 56
     Width = 154
     Height = 25
-    Hint = #1059#1073#1088#1072#1090#1100' '#1074#1089#1077' '#1092#1080#1075#1091#1088#1099' '#1089' '#1076#1086#1089#1082#1080
+    Hint = #1053#1072#1095#1072#1090#1100' '#1085#1086#1074#1091#1102' '#1080#1075#1088#1091' '#1089' '#1095#1080#1089#1090#1086#1081' '#1076#1086#1089#1082#1086#1081
     Caption = #1054#1095#1080#1089#1090#1080#1090#1100' '#1076#1086#1089#1082#1091
     OnClick = ClearBtnClick
   end
   object Label1: TLabel
-    Left = 518
-    Top = 431
+    Left = 566
+    Top = 429
     Width = 47
     Height = 13
     Caption = #1059#1088#1086#1074#1077#1085#1100':'
-  end
-  object Label2: TLabel
-    Left = 530
-    Top = 452
-    Width = 35
-    Height = 13
-    Caption = #1051#1080#1084#1080#1090':'
   end
   object RedoBtn: TSpeedButton
     Left = 636
@@ -151,7 +144,7 @@ object MainForm: TMainForm
     OnClick = UndoBtnClick
   end
   object Panel1: TPanel
-    Left = 0
+    Left = -1
     Top = 0
     Width = 512
     Height = 512
@@ -164,7 +157,6 @@ object MainForm: TMainForm
       Height = 510
       Align = alClient
       OnMouseDown = PBoxMouseDown
-      OnMouseMove = PBoxMouseMove
       ExplicitLeft = 176
       ExplicitTop = 160
       ExplicitWidth = 233
@@ -174,7 +166,7 @@ object MainForm: TMainForm
   object Status: TStatusBar
     Left = 0
     Top = 511
-    Width = 680
+    Width = 677
     Height = 23
     Panels = <
       item
@@ -200,9 +192,9 @@ object MainForm: TMainForm
     TabOrder = 2
   end
   object selLevel: TComboBox
-    Left = 567
-    Top = 429
-    Width = 105
+    Left = 518
+    Top = 447
+    Width = 151
     Height = 21
     Style = csDropDownList
     ItemIndex = 2
@@ -210,29 +202,10 @@ object MainForm: TMainForm
     Text = #1059#1089#1080#1083#1077#1085#1085#1099#1081
     OnChange = selLevelChange
     Items.Strings = (
-      #1059#1087#1088#1086#1097#1077#1085#1085#1099#1081
-      #1041#1072#1079#1086#1074#1099#1081
+      #1059#1087#1088#1086#1097#1077#1085#1085#1099#1081' '
+      #1041#1072#1079#1086#1074#1099#1081' '
       #1059#1089#1080#1083#1077#1085#1085#1099#1081
       #1052#1072#1082#1089#1080#1084#1072#1083#1100#1085#1099#1081)
-  end
-  object limitbox: TComboBox
-    Left = 567
-    Top = 450
-    Width = 105
-    Height = 21
-    Hint = #1054#1075#1088#1072#1085#1080#1095#1077#1085#1080#1077' '#1075#1083#1091#1073#1080#1085#1099' '#1076#1083#1103' '#1086#1090#1083#1072#1076#1082#1080
-    Style = csDropDownList
-    ItemIndex = 0
-    TabOrder = 4
-    Text = #1053#1077#1090
-    OnChange = limitboxChange
-    Items.Strings = (
-      #1053#1077#1090
-      '1 '#1092#1072#1079#1072
-      '2 '#1092#1072#1079#1099
-      '3 '#1092#1072#1079#1099
-      '4 '#1092#1072#1079#1099
-      '5 '#1092#1072#1079)
   end
   object LibEnableBtn: TCheckBox
     Left = 519
@@ -243,7 +216,7 @@ object MainForm: TMainForm
     Caption = #1080#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1073#1080#1073#1083#1080#1086#1090#1077#1082#1091
     Checked = True
     State = cbChecked
-    TabOrder = 5
+    TabOrder = 4
     OnClick = LibEnableBtnClick
   end
   object selfLearn: TCheckBox
@@ -255,7 +228,7 @@ object MainForm: TMainForm
     Caption = #1089#1072#1084#1086#1086#1073#1091#1095#1077#1085#1080#1077
     Checked = True
     State = cbChecked
-    TabOrder = 6
+    TabOrder = 5
     OnClick = selfLearnClick
   end
   object Pieces: TImageList
@@ -7714,36 +7687,36 @@ object MainForm: TMainForm
   object menu1: TPopupMenu
     Left = 456
     Top = 424
-    object N5: TMenuItem
+    object MenuSaveGame: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1080#1075#1088#1091'...'
-      OnClick = N5Click
+      OnClick = MenuSaveGameClick
     end
-    object N6: TMenuItem
+    object MenuLoadGame: TMenuItem
       Caption = #1047#1072#1075#1088#1091#1079#1080#1090#1100' '#1080#1075#1088#1091'...'
-      OnClick = N6Click
+      OnClick = MenuLoadGameClick
     end
     object N4: TMenuItem
       Caption = '-'
     end
-    object N1: TMenuItem
+    object MenuSaveTurn: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1093#1086#1076
-      OnClick = N1Click
+      OnClick = MenuSaveTurnClick
     end
-    object N061: TMenuItem
+    object MenuSaveTurn2: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1093#1086#1076' ('#1074#1077#1089'=0.6)'
-      OnClick = N061Click
+      OnClick = MenuSaveTurn2Click
     end
-    object N041: TMenuItem
+    object MenuSaveTurn3: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1093#1086#1076' ('#1074#1077#1089'=0.4)'
-      OnClick = N041Click
+      OnClick = MenuSaveTurn3Click
     end
-    object N2: TMenuItem
+    object MenuDeleteTurn: TMenuItem
       Caption = #1059#1076#1072#1083#1080#1090#1100' '#1093#1086#1076
-      OnClick = N2Click
+      OnClick = MenuDeleteTurnClick
     end
-    object N3: TMenuItem
+    object MenuSaveAllTurns: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1074#1089#1077' '#1093#1086#1076#1099' '#1087#1072#1088#1090#1080#1080
-      OnClick = N3Click
+      OnClick = MenuSaveAllTurnsClick
     end
   end
   object Timer: TTimer

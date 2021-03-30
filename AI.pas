@@ -1,27 +1,35 @@
+п»ї// Р—РґРµСЃСЊ СЂРµР°Р»РёР·Р°С†РёСЏ Р°Р»РіРѕСЂРёС‚РјР° РїСЂРёРЅСЏС‚РёСЏ СЂРµС€РµРЅРёР№
 unit AI;
 interface
  var
   useLibrary:boolean=false;
+  turnTimeLimit:integer = 5; // turn time limit in seconds
+  aiLevel:integer; // СѓСЂРѕРІРµРЅСЊ СЃР»РѕР¶РЅРѕСЃС‚Рё (1..5) - РѕРїСЂРµРґРµР»СЏРµС‚ РјРѕРјРµРЅС‚, РєРѕРіРґР° AI РїСЂРёРЅРёРјР°РµС‚ СЂРµС€РµРЅРёРµ Рѕ РіРѕС‚РѕРІРЅРѕСЃС‚Рё С…РѕРґР°
+  aiSelfLearn:boolean=true; // СЂРµР¶РёРј СЃР°РјРѕРѕР±СѓС‡РµРЅРёСЏ: РїРѕРїРѕР»РЅСЏРµС‚ Р±Р°Р·Сѓ РѕС†РµРЅРѕРє РїРѕР·РёС†РёР№ РІ С…РѕРґРµ РёРіСЂС‹
+
+  aiStatus:string; // СЃРѕСЃС‚РѕСЏРЅРёРµ СЂР°Р±РѕС‚С‹ AI
+  moveReady:integer; // РіРѕС‚РѕРІРЅРѕСЃС‚СЊ С…РѕРґР° - РёРЅРґРµРєСЃ РІС‹Р±СЂР°РЅРЅРѕР№ РґРѕСЃРєРё РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ (<=0 - С…РѕРґ РЅРµ РіРѕС‚РѕРІ). РљРѕРіРґР° РІС‹СЃС‚Р°РІР»СЏРµС‚СЃСЏ - AI СЃС‚Р°РІРёС‚СЃСЏ РЅР° РїР°СѓР·Сѓ
 
  procedure StartAI;
  procedure PauseAI;
  procedure ResumeAI;
  procedure StopAI;
+ procedure AiTimer; // РЅРµРѕР±С…РѕРґРёРјРѕ РІС‹Р·С‹РІР°С‚СЊ СЂРµРіСѓР»СЏСЂРЅРѕ РЅРµ РјРµРЅРµРµ 20 СЂР°Р· РІ СЃРµРєСѓРЅРґСѓ. РџРµСЂРµРєР»СЋС‡Р°РµС‚ СЂРµР¶РёРј СЂР°Р±РѕС‚С‹ AI
 
  function IsAIrunning:boolean;
+ procedure EstimatePosition(boardIdx:integer;quality:byte;noCache:boolean=false);
+
 
 implementation
  uses Apus.MyServis,SysUtils,Classes,gamedata,logic;
 
  const
-  // штраф за незащищенную фигуру под боем
+  // С€С‚СЂР°С„ Р·Р° РЅРµР·Р°С‰РёС‰РµРЅРЅСѓСЋ С„РёРіСѓСЂСѓ РїРѕРґ Р±РѕРµРј
   bweight:array[0..6] of single=(0,1, 5.2, 3.1, 3.1, 9.3, 1000);
   bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 1000);
 
  type
-  ThinkThread=class(TThread)
-   moveFrom,moveTo:byte;
-   moveReady:boolean;
+  TThinkThread=class(TThread)
    status:string;
    useLibrary,advSearch,selfTeach,running:boolean;
    level,plimit,d1,d2:byte;
@@ -31,8 +39,12 @@ implementation
    procedure DoThink;
   end;
 
- // оценка позиции (rate - за черных)
- procedure EstimatePosition(var b:TBoard;quality:byte;noCache:boolean=false);
+ var
+  threads:array[0..15] of TThinkThread;
+
+
+ // РѕС†РµРЅРєР° РїРѕР·РёС†РёРё (rate - Р·Р° С‡РµСЂРЅС‹С…)
+ procedure EstimatePosition(boardIdx:integer;quality:byte;noCache:boolean=false);
   const
    PawnRate:array[0..7] of single=(1, 1, 1, 1.02, 1.1, 1.3, 1.9, 2);
   var
@@ -41,59 +53,63 @@ implementation
    maxblack,maxwhite:single;
    hash:int64;
    h:integer;
+   beatable:TBeatable;
+   b:PBoard;
   begin
    inc(estCounter);
-   // проверка на 3-й повтор
+   b:=@data[boardIdx];
+   // РїСЂРѕРІРµСЂРєР° РЅР° 3-Р№ РїРѕРІС‚РѕСЂ
    n:=1;
    j:=b.parent;
    while j>0 do begin
-    if CompareBoards(b,data[j])=0 then inc(n);
+    if CompareBoards(b^,data[j])=0 then begin
+     inc(n);
+     if n>=3 then begin
+      b.BlackRate:=1;
+      b.WhiteRate:=1;
+      b.rate:=0;
+      b.flags:=b.flags or movRepeat;
+      exit;
+     end;
+    end;
     j:=data[j].parent;
-   end;
-   for j:=1 to historyPos do
-    if compareBoards(b,history[j])=0 then inc(n);
-   if n>=3 then begin
-    b.BlackRate:=1;
-    b.WhiteRate:=1;
-    b.rate:=0;
-    b.flags:=b.flags or movRepeat;
-    exit;
    end;
 
    if not noCache then begin
     inc(cacheUse);
-    hash:=BoardHash(b);
+    hash:=BoardHash(b^);
     h:=hash and CacheMask;
-    if cache[h].hash=hash then with b do begin
-     // вычисление флага шаха
-     IsCheck(b);
-     whiterate:=1;
-     blackrate:=1;
-     rate:=integer(cache[h].rate and $FFFFFF00)/(1000*256);
-     if cache[h].rate and 1>0 then flags:=flags or movDB;
-     if PlayerWhite then rate:=-rate;
-     exit;
-    end;
+    if cache[h].hash=hash then
+     with b^ do begin
+      // РІС‹С‡РёСЃР»РµРЅРёРµ С„Р»Р°РіР° С€Р°С…Р°
+      IsCheck(b^);
+      whiterate:=1;
+      blackrate:=1;
+      rate:=integer(cache[h].rate and $FFFFFF00)/(1000*256);
+      if cache[h].rate and 1>0 then flags:=flags or movDB;
+      if PlayerWhite then rate:=-rate;
+      exit;
+     end;
    end;
 
-   with b do begin
-    WhiteRate:=-1000;
-    BlackRate:=-1000;
+   with b^ do begin
+    whiteRate:=-1000;
+    blackRate:=-1000;
     flags:=flags and (not movCheck);
     if quality=0 then begin
      for i:=0 to 7 do
       for j:=0 to 7 do
-       case field[i,j] of
+       case GetCell(i,j) of
         KingWhite:WhiteRate:=WhiteRate+1000;
         KingBlack:BlackRate:=BlackRate+1000;
        end;
      exit;
     end;
-    CalcBeatable(b);
-    // Базовая оценка
+    CalcBeatable(b^,beatable);
+    // Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°
     for i:=0 to 7 do
      for j:=0 to 7 do
-      case field[i,j] of
+      case GetCell(i,j) of
        PawnWhite:WhiteRate:=WhiteRate+PawnRate[j];
        PawnBlack:BlackRate:=BlackRate+PawnRate[7-j];
 
@@ -105,9 +121,9 @@ implementation
        BishopBlack:BlackRate:=BlackRate+3;
        KnightWhite:WhiteRate:=WhiteRate+3;
        KnightBlack:BlackRate:=BlackRate+3;
-       // если король под шахом и ход противника - игра проиграна
+       // РµСЃР»Рё РєРѕСЂРѕР»СЊ РїРѕРґ С€Р°С…РѕРј Рё С…РѕРґ РїСЂРѕС‚РёРІРЅРёРєР° - РёРіСЂР° РїСЂРѕРёРіСЂР°РЅР°
        KingWhite:begin
-        // условие инвертировано
+        // СѓСЃР»РѕРІРёРµ РёРЅРІРµСЂС‚РёСЂРѕРІР°РЅРѕ
         if WhiteTurn or (beatable[i,j] and Black=0) then WhiteRate:=WhiteRate+1005;
         if beatable[i,j] and Black>0 then flags:=flags or movCheck;
        end;
@@ -116,38 +132,38 @@ implementation
         if beatable[i,j] and White>0 then flags:=flags or movCheck;
        end;
       end;
-    // Бонус за рокировку
+    // Р‘РѕРЅСѓСЃ Р·Р° СЂРѕРєРёСЂРѕРІРєСѓ
     if rFlags and $8>0 then WhiteRate:=WhiteRate+0.8;
     if rFlags and $80>0 then BlackRate:=BlackRate+0.8;
-    // Штраф за невозможность рокировки
+    // РЁС‚СЂР°С„ Р·Р° РЅРµРІРѕР·РјРѕР¶РЅРѕСЃС‚СЊ СЂРѕРєРёСЂРѕРІРєРё
     if (rFlags and $8=0) and (rflags and $4>0) then WhiteRate:=WhiteRate-0.3;
     if (rFlags and $80=0) and (rflags and $40>0) then BlackRate:=BlackRate-0.3;
 
     if gamestage<3 then begin
-     // Штраф за невыведенные фигуры
-     if field[1,0]=KnightWhite then WhiteRate:=WhiteRate-0.2;
-     if field[6,0]=KnightWhite then WhiteRate:=WhiteRate-0.2;
-     if field[2,0]=BishopWhite then WhiteRate:=WhiteRate-0.2;
-     if field[5,0]=BishopWhite then WhiteRate:=WhiteRate-0.2;
-     if field[1,7]=KnightBlack then BlackRate:=BlackRate-0.2;
-     if field[6,7]=KnightBlack then BlackRate:=BlackRate-0.2;
-     if field[2,7]=BishopBlack then BlackRate:=BlackRate-0.2;
-     if field[5,7]=BishopBlack then BlackRate:=BlackRate-0.2;
-     // штраф за гуляющего короля
+     // РЁС‚СЂР°С„ Р·Р° РЅРµРІС‹РІРµРґРµРЅРЅС‹Рµ С„РёРіСѓСЂС‹
+     if GetCell(1,0)=KnightWhite then WhiteRate:=WhiteRate-0.2;
+     if GetCell(6,0)=KnightWhite then WhiteRate:=WhiteRate-0.2;
+     if GetCell(2,0)=BishopWhite then WhiteRate:=WhiteRate-0.2;
+     if GetCell(5,0)=BishopWhite then WhiteRate:=WhiteRate-0.2;
+     if GetCell(1,7)=KnightBlack then BlackRate:=BlackRate-0.2;
+     if GetCell(6,7)=KnightBlack then BlackRate:=BlackRate-0.2;
+     if GetCell(2,7)=BishopBlack then BlackRate:=BlackRate-0.2;
+     if GetCell(5,7)=BishopBlack then BlackRate:=BlackRate-0.2;
+     // С€С‚СЂР°С„ Р·Р° РіСѓР»СЏСЋС‰РµРіРѕ РєРѕСЂРѕР»СЏ
      for i:=0 to 7 do
       for j:=1 to 6 do begin
-       if field[i,j]=KingWhite then WhiteRate:=WhiteRate-sqr(j)*0.05;
-       if field[i,j]=KingBlack then BlackRate:=BlackRate-sqr(7-j)*0.05;
+       if GetCell(i,j)=KingWhite then WhiteRate:=WhiteRate-sqr(j)*0.05;
+       if GetCell(i,j)=KingBlack then BlackRate:=BlackRate-sqr(7-j)*0.05;
       end;
     end;
-    // штраф за сдвоенные пешки и бонус за захват открытых линий
+    // С€С‚СЂР°С„ Р·Р° СЃРґРІРѕРµРЅРЅС‹Рµ РїРµС€РєРё Рё Р±РѕРЅСѓСЃ Р·Р° Р·Р°С…РІР°С‚ РѕС‚РєСЂС‹С‚С‹С… Р»РёРЅРёР№
     for i:=0 to 7 do begin
      n:=0; m:=0; f:=0;
      for j:=0 to 7 do begin
-      if field[i,j]=PawnWhite then inc(n);
-      if field[i,j]=PawnBlack then inc(m);
-      if field[i,j] in [RookWhite,QueenWhite] then f:=f or 1;
-      if field[i,j] in [RookBlack,QueenBlack] then f:=f or 2;
+      if GetCell(i,j)=PawnWhite then inc(n);
+      if GetCell(i,j)=PawnBlack then inc(m);
+      if GetCell(i,j) in [RookWhite,QueenWhite] then f:=f or 1;
+      if GetCell(i,j) in [RookBlack,QueenBlack] then f:=f or 2;
      end;
      if n>1 then WhiteRate:=WhiteRate-0.1*n;
      if m>1 then BlackRate:=BlackRate-0.1*m;
@@ -155,12 +171,12 @@ implementation
      if (n=0) and (m=0) and (f and 2>0) then BlackRate:=BlackRate+0.1;
     end;
 
-    // Надбавка за инициативу
+    // РќР°РґР±Р°РІРєР° Р·Р° РёРЅРёС†РёР°С‚РёРІСѓ
   {  if WhiteTurn then WhiteRate:=WhiteRate+0.1
      else BlackRate:=BlackRate+0.05;}
 
     if quality>0 then begin
-     // 1-е расширение оценки - поля и фигуры под боем
+     // 1-Рµ СЂР°СЃС€РёСЂРµРЅРёРµ РѕС†РµРЅРєРё - РїРѕР»СЏ Рё С„РёРіСѓСЂС‹ РїРѕРґ Р±РѕРµРј
      maxblack:=0; maxwhite:=0;
      for i:=0 to 7 do
       for j:=0 to 7 do begin
@@ -169,44 +185,44 @@ implementation
        if (i in [3..4]) and (j in [3..4]) then v:=0.11;
        if beatable[i,j] and White>0 then WhiteRate:=WhiteRate+v;
        if beatable[i,j] and Black>0 then BlackRate:=BlackRate+v;
-       // Незащищенная фигура под боем на ходу противника - минус фигуру!
-       if (b.WhiteTurn) and (beatable[i,j] and White>0) and (field[i,j] and ColorMask=Black) then begin
-        if beatable[i,j] and Black>0 then v:=bweight[field[i,j] and $F]-bweight2[beatable[i,j] and 7]
-         else v:=bweight[field[i,j] and $F];
+       // РќРµР·Р°С‰РёС‰РµРЅРЅР°СЏ С„РёРіСѓСЂР° РїРѕРґ Р±РѕРµРј РЅР° С…РѕРґСѓ РїСЂРѕС‚РёРІРЅРёРєР° - РјРёРЅСѓСЃ С„РёРіСѓСЂСѓ!
+       if (b.whiteTurn) and (beatable[i,j] and White>0) and (GetPieceColor(i,j)=Black) then begin
+        if beatable[i,j] and Black>0 then v:=bweight[GetPieceType(i,j)]-bweight2[beatable[i,j] and 7]
+         else v:=bweight[GetPieceType(i,j)];
         if maxblack<v then maxblack:=v;
        end;
-       if (not b.WhiteTurn) and (beatable[i,j] and Black>0) and (field[i,j] and ColorMask=White) then begin
-        if beatable[i,j] and White>0 then v:=bweight[field[i,j] and $F]-bweight2[(beatable[i,j] shr 3) and 7]
-         else v:=bweight[field[i,j] and $F];
+       if (not b.whiteTurn) and (beatable[i,j] and Black>0) and (GetPieceColor(i,j)=White) then begin
+        if beatable[i,j] and White>0 then v:=bweight[GetPieceType(i,j)]-bweight2[(beatable[i,j] shr 3) and 7]
+         else v:=bweight[GetPieceType(i,j)];
         if maxWhite<v then maxWhite:=v;
        end;
       end;
-     WhiteRate:=WhiteRate-maxWhite;
-     BlackRate:=BlackRate-maxBlack;
+     whiteRate:=whiteRate-maxWhite;
+     blackRate:=blackRate-maxBlack;
     end;
 
-    if WhiteRate<5.5 then begin // один король
+    if whiteRate<5.5 then begin // РѕРґРёРЅ РєРѕСЂРѕР»СЊ
      for i:=0 to 7 do
       for j:=0 to 7 do
-       if field[i,j]=KingWhite then begin
+       if GetCell(i,j)=KingWhite then begin
         x:=i; y:=j;
         WhiteRate:=WhiteRate-0.2*(abs(i-3.5)+abs(j-3.5));
        end;
      for i:=0 to 7 do
       for j:=0 to 7 do
-       if field[i,j]=KingBlack then
+       if GetCell(i,j)=KingBlack then
         BlackRate:=BlackRate-0.05*(abs(i-x)+abs(j-y));
     end;
-    if BlackRate<5.5 then begin // один король
+    if BlackRate<5.5 then begin // РѕРґРёРЅ РєРѕСЂРѕР»СЊ
      for i:=0 to 7 do
       for j:=0 to 7 do
-       if field[i,j]=KingBlack then begin
+       if GetCell(i,j)=KingBlack then begin
         x:=i; y:=j;
         BlackRate:=BlackRate-0.2*(abs(i-3.5)+abs(j-3.5));
        end;
      for i:=0 to 7 do
       for j:=0 to 7 do
-       if field[i,j]=KingWhite then
+       if GetCell(i,j)=KingWhite then
         WhiteRate:=WhiteRate-0.05*(abs(i-x)+abs(j-y));
     end;
 
@@ -226,9 +242,9 @@ implementation
   end;
 
 
- // Построить полное дерево до заданной глубины
- // продолжать ходы со взятием и шахами, но не далее чем до maxdepth
- // корневой эл-т должен быть оценен!
+ // РџРѕСЃС‚СЂРѕРёС‚СЊ РїРѕР»РЅРѕРµ РґРµСЂРµРІРѕ РґРѕ Р·Р°РґР°РЅРЅРѕР№ РіР»СѓР±РёРЅС‹
+ // РїСЂРѕРґРѕР»Р¶Р°С‚СЊ С…РѕРґС‹ СЃРѕ РІР·СЏС‚РёРµРј Рё С€Р°С…Р°РјРё, РЅРѕ РЅРµ РґР°Р»РµРµ С‡РµРј РґРѕ maxdepth
+ // РєРѕСЂРЅРµРІРѕР№ СЌР»-С‚ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕС†РµРЅРµРЅ!
  procedure BuildTree(root:integer;forHuman:boolean=false);
   var
    i,j,k,newidx,h,cur:integer;
@@ -241,18 +257,18 @@ implementation
    repeat
     cur:=qu[qStart];
     with data[cur] do begin
-     // не продолжать позиции, которые:
-     // - являются проигрышными для одной из сторон
-     // - уже имеют потомков, т.е. были обработаны ранее
-     // - приводят к пату из-за повторения позиций
-     // - с оценкой из базы
+     // РЅРµ РїСЂРѕРґРѕР»Р¶Р°С‚СЊ РїРѕР·РёС†РёРё, РєРѕС‚РѕСЂС‹Рµ:
+     // - СЏРІР»СЏСЋС‚СЃСЏ РїСЂРѕРёРіСЂС‹С€РЅС‹РјРё РґР»СЏ РѕРґРЅРѕР№ РёР· СЃС‚РѕСЂРѕРЅ
+     // - СѓР¶Рµ РёРјРµСЋС‚ РїРѕС‚РѕРјРєРѕРІ, С‚.Рµ. Р±С‹Р»Рё РѕР±СЂР°Р±РѕС‚Р°РЅС‹ СЂР°РЅРµРµ
+     // - РїСЂРёРІРѕРґСЏС‚ Рє РїР°С‚Сѓ РёР·-Р·Р° РїРѕРІС‚РѕСЂРµРЅРёСЏ РїРѕР·РёС†РёР№
+     // - СЃ РѕС†РµРЅРєРѕР№ РёР· Р±Р°Р·С‹
      if (rate>-200) and (rate<200) and (flags and (movRepeat+movDB)=0) then begin
       if firstChild>0 then begin
        k:=firstChild;
        while k>0 do begin
         qu[qLast]:=k;
         inc(qLast);
-        k:=data[k].next;
+        k:=data[k].nextSibling;
        end;
        inc(qStart); continue;
       end;
@@ -261,25 +277,22 @@ implementation
        continue;
       end;
       if (flags and movCheck>0) then begin
-       if depth and 1=0 then rate:=-300+depth else rate:=300-depth;
-      end else rate:=0; // оценка будет сформирована из потомков, если их нет - пат=0
+       if whiteTurn xor playerWhite then rate:=-300 else rate:=300; /// TODO: check
+       //if depth and 1=0 then rate:=-300+depth else rate:=300-depth;
+      end else rate:=0; // РѕС†РµРЅРєР° Р±СѓРґРµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅР° РёР· РїРѕС‚РѕРјРєРѕРІ, РµСЃР»Рё РёС… РЅРµС‚ - РїР°С‚=0
       if WhiteTurn then color:=White else color:=Black;
-      // продолжить дерево
+      // РїСЂРѕРґРѕР»Р¶РёС‚СЊ РґРµСЂРµРІРѕ
       for i:=0 to 7 do
        for j:=0 to 7 do
-        if field[i,j] and ColorMask=color then begin
+        if GetPieceColor(i,j)=color then begin
          GetAvailMoves(data[cur],i+j shl 4,moves);
          for k:=1 to moves[0] do begin
           if freecnt<1 then break;
           newidx:=AddChild(cur);
-          data[newidx].field:=field;
-          data[newidx].rFlags:=rFlags;
-          data[newidx].depth:=depth+1;
-          data[newidx].WhiteTurn:=WhiteTurn;
           DoMove(data[newidx],i+j shl 4,moves[k]);
           qu[qLast]:=newidx;
           inc(qLast);
-          EstimatePosition(data[newidx],10);
+          EstimatePosition(newidx,10);
           if data[newidx].flags and movBeat>0 then
            data[newidx].weight:=weight-6
           else
@@ -288,7 +301,7 @@ implementation
           else
            data[newidx].weight:=weight-10;
           if abs(data[newidx].rate)>200 then begin
-           // недопустимый ход
+           // РЅРµРґРѕРїСѓСЃС‚РёРјС‹Р№ С…РѕРґ
            DeleteNode(newidx,true);
            dec(qLast);
           end;
@@ -309,7 +322,7 @@ implementation
    while c>0 do begin
     CheckTree(c);
     Assert(data[c].parent=root);
-    c:=data[c].next;
+    c:=data[c].nextSibling;
    end;
   end;
 
@@ -324,7 +337,7 @@ implementation
    while c>0 do begin
     inc(n);
     children[n]:=c;
-    c:=data[c].next;
+    c:=data[c].nextSibling;
    end;
    for i:=1 to n-1 do
     for j:=i+1 to n do
@@ -335,19 +348,19 @@ implementation
      end;
    c:=children[1];
    data[root].firstChild:=c;
-   data[c].prev:=0;
+   data[c].prevSibling:=0;
    d:=c;
    for i:=2 to n do begin
     c:=children[i];
-    data[c].prev:=d;
-    data[d].next:=c;
+    data[c].prevSibling:=d;
+    data[d].nextSibling:=c;
     d:=c;
    end;
-   data[c].next:=0;
+   data[c].nextSibling:=0;
    data[root].lastChild:=c;
   end;
 
- // Обрезание дерева
+ // РћР±СЂРµР·Р°РЅРёРµ РґРµСЂРµРІР°
  procedure CutTree(root:integer;p1,p2:integer);
   var
    i,j,d:integer;
@@ -358,7 +371,8 @@ implementation
   // t1:=p1 div (data[root].depth+p2);
   // t2:=(p1+20) div (data[root].depth+p2-1);
 
-   dir:=data[root].depth and 1=0;
+   //dir:=data[root].depth and 1=0;
+   dir:=data[root].whiteTurn xor playerWhite;
    if dir then d:=data[root].firstChild
      else d:=data[root].lastChild;
 
@@ -373,7 +387,7 @@ implementation
        gate2:=gate2*0.6+0.01;
       end;
     v:=data[d].rate;
-    if dir then d:=data[d].next else d:=data[d].prev;
+    if dir then d:=data[d].nextSibling else d:=data[d].prevSibling;
     if abs(data[d].rate-v)>gate2 then fl:=true;
     inc(j);
    end;
@@ -395,7 +409,7 @@ implementation
     else
      data[d].Weight:=leafWeight;
     children[n]:=d;
-    d:=data[d].next;
+    d:=data[d].nextSibling;
    end;
    if n=0 then exit;
    min:=data[children[1]].rate;
@@ -411,7 +425,7 @@ implementation
     data[root].rate:=min;
 
   { if delbad then begin
-    // прореживание дерева
+    // РїСЂРѕСЂРµР¶РёРІР°РЅРёРµ РґРµСЂРµРІР°
     c:=n;
     if data[root].depth and 1=0 then begin
      v:=(max+min)/2;
@@ -441,22 +455,24 @@ implementation
    c:integer;
   begin
    c:=0;
-   for i:=0 to 7 do begin
-    if board.field[i,0]>0 then inc(c);
-    if board.field[i,7]>0 then inc(c);
-    if board.field[i,1]=PawnWhite then inc(c);
-    if board.field[i,6]=PawnBlack then inc(c);
-   end;
+   with data[curBoardIdx] do
+    for i:=0 to 7 do begin
+     if not CellIsEmpty(i,0) then inc(c);
+     if not CellIsEmpty(i,7) then inc(c);
+     if GetCell(i,1)=PawnWhite then inc(c);
+     if GetCell(i,6)=PawnBlack then inc(c);
+    end;
    if c>=18 then begin
-    gamestage:=1; exit; // дебют
+    gamestage:=1; exit; // РґРµР±СЋС‚
    end;
-   EstimatePosition(board,10,true);
-   if (board.WhiteRate<18) and (board.BlackRate<18) then gameStage:=3
-    else gamestage:=2;
+   EstimatePosition(curBoardIdx,10,true);
+   with curBoard^ do
+    if (whiteRate<18) and (blackRate<18) then gameStage:=3
+     else gamestage:=2;
   end;
 
  //
- function ThinkThread.ThinkIteration(root:integer;iteration:byte):boolean;
+ function TThinkThread.ThinkIteration(root:integer;iteration:byte):boolean;
   var
    i,j,c,limit:integer;
    arr:array[1..100] of integer;
@@ -473,24 +489,24 @@ implementation
      end;
      limit:=8*(220*level+500);
      if limit>20000 then limit:=20000;
-     leafs:=CountLeaves(root);
-     if leafs>limit then begin
+     totalLeafCount:=CountLeaves(root);
+     if totalLeafCount>limit then begin
       CutTree(root,8,0);
-      leafs:=CountLeaves(root);
+      totalLeafCount:=CountLeaves(root);
      end;
-     if leafs>limit then begin
+     if totalLeafCount>limit then begin
       CutTree(root,20,0);
-      leafs:=CountLeaves(root);
+      totalLeafCount:=CountLeaves(root);
      end;
-     if leafs>limit then begin
+     if totalLeafCount>limit then begin
       CutTree(root,40,0);
-      leafs:=CountLeaves(root);
+      totalLeafCount:=CountLeaves(root);
      end;
-     if leafs>limit then begin
+     if totalLeafCount>limit then begin
       result:=false; exit;
      end;
      inc(d1); inc(d2);
-     if leafs<limit div 10 then
+     if totalLeafCount<limit div 10 then
       BuildTree(root)
      else
       BuildTree(root);
@@ -499,32 +515,16 @@ implementation
    end;
   end;
 
-// Найти ход
- procedure ThinkThread.DoThink;
+ function MakeTurnFromLibrary:boolean;
   var
-   startTime,limit:cardinal;
-   i,j,n:integer;
+   i,j,n,weight,board:integer;
    turns:array[1..30] of integer;
-   weight:integer;
-   b:TBoard;
-   color,color2,phase:byte;
-   v:single;
-   hash:int64;
-   fl:boolean;
   begin
-   starttime:=gettickcount;
-
-   if PlayerWhite then begin
-    color:=Black; color2:=white;
-   end else begin
-    color:=White; color2:=black;
-   end;
-
-   // 1. Поиск ходов в библиотеке
-   if useLibrary then begin
     n:=0; weight:=0;
-    for i:=0 to length(turnLib)-1 do
-     if CompareBoards(board,turnLib[i])=0 then begin
+    // РЎРѕСЃС‚Р°РІРёРј СЃРїРёСЃРѕРє РІР°СЂРёР°РЅС‚РѕРІ С…РѕРґРѕРІ РґР»СЏ С‚РµРєСѓС‰РµР№ РїРѕР·РёС†РёРё
+    for i:=0 to high(turnLib) do
+     if (CompareMem(@curBoard.cells,@turnLib[i].field,sizeof(TField))) and
+        (curBoard.whiteTurn=turnLib[i].whiteTurn) then begin
       inc(n);
       turns[n]:=i;
       inc(weight,turnlib[i].weight);
@@ -535,37 +535,64 @@ implementation
      for i:=1 to n do begin
       weight:=weight+turnlib[turns[i]].weight;
       if weight>j then begin
-       moveFrom:=turnlib[turns[i]].lastTurnFrom;
-       moveTo:=turnlib[turns[i]].lastTurnTo;
-       moveReady:=true;
+       board:=AddChild(curBoardIdx);
+       with turnlib[turns[i]] do
+        DoMove(data[board],turnFrom,turnTo);
+       moveReady:=board;
        exit;
       end;
      end;
     end;
+  end;
+
+ // РќР°Р№С‚Рё С…РѕРґ
+ procedure TThinkThread.DoThink;
+  var
+   startTime,limit:cardinal;
+   i,j,n:integer;
+   weight:integer;
+   b:TBoard;
+   color,color2,phase:byte;
+   v:single;
+   hash:int64;
+   fl:boolean;
+   beatable:TBeatable;
+  begin
+   starttime:=gettickcount;
+
+   if PlayerWhite then begin
+    color:=Black; color2:=white;
+   end else begin
+    color:=White; color2:=black;
    end;
-   // 2. Обдумывание
-   // определение фазы игры
+
+   // 1. РџРѕРёСЃРє С…РѕРґРѕРІ РІ Р±РёР±Р»РёРѕС‚РµРєРµ
+   if useLibrary and MakeTurnFromLibrary then exit;
+
+   // 2. РћР±РґСѓРјС‹РІР°РЅРёРµ
+   // РѕРїСЂРµРґРµР»РµРЅРёРµ С„Р°Р·С‹ РёРіСЂС‹
    GetGamePhase;
 
-   // 2.1. Составить все различные позиции на 3 полухода вперед
-   status:='Составление позиций';
+   // 2.1. РЎРѕСЃС‚Р°РІРёС‚СЊ РІСЃРµ СЂР°Р·Р»РёС‡РЅС‹Рµ РїРѕР·РёС†РёРё РЅР° 3 РїРѕР»СѓС…РѕРґР° РІРїРµСЂРµРґ
+   status:='РЎРѕСЃС‚Р°РІР»РµРЅРёРµ РїРѕР·РёС†РёР№';
    try
-   qStart:=1; // текущий эл-т для обработки
-   qlast:=1; // последний добавленный в очередь эл-т
+   qStart:=1; // С‚РµРєСѓС‰РёР№ СЌР»-С‚ РґР»СЏ РѕР±СЂР°Р±РѕС‚РєРё
+   qlast:=1; // РїРѕСЃР»РµРґРЅРёР№ РґРѕР±Р°РІР»РµРЅРЅС‹Р№ РІ РѕС‡РµСЂРµРґСЊ СЌР»-С‚
    freecnt:=0;
    for i:=memsize downto 1 do begin
     inc(freecnt);
     freeList[freecnt]:=i;
    end;
    dec(freecnt);
-   data[1]:=board;
+   /// TODO: РЅРµ РїРѕСЂС‚РёС‚СЊ РґРµСЂРµРІРѕ!
+   //data[1]:=board;
    data[1].depth:=0;
    data[1].weight:=26;
    data[1].parent:=0;
-   data[1].next:=0;
+   data[1].nextSibling:=0;
    data[1].firstChild:=0;
    data[1].lastChild:=0;
-   EstimatePosition(data[1],10);
+   EstimatePosition(1,10);
    data[1].flags:=0;
   // data[1].flags:=data[1].flags and not movDB;
    cacheUse:=0; cacheMiss:=0;
@@ -573,11 +600,11 @@ implementation
 
    phase:=0;
    if level=0 then begin
-    // упрощенный уровень
+    // СѓРїСЂРѕС‰РµРЅРЅС‹Р№ СѓСЂРѕРІРµРЅСЊ
     BuildTree(1);
     RateTree(1,10);
    end else begin
-    // обычный уровень
+    // РѕР±С‹С‡РЅС‹Р№ СѓСЂРѕРІРµРЅСЊ
     case level of
      1:limit:=100000;
      2:limit:=500000;
@@ -586,7 +613,7 @@ implementation
     d1:=3; d2:=4;
     for i:=1 to 11 do begin
      phase:=i;
-     status:='Фаза '+inttostr(i);
+     status:='Р¤Р°Р·Р° '+inttostr(i);
      if not ThinkIteration(1,i) then begin
       dec(phase);
       break;
@@ -595,45 +622,45 @@ implementation
      if (estCounter>limit) or (terminated) then break;
     end;
    end;
-   leafs:=CountLeaves(1);
+   totalLeafCount:=CountLeaves(1);
 
-  { status:='Углублённая проработка';
+  { status:='РЈРіР»СѓР±Р»С‘РЅРЅР°СЏ РїСЂРѕСЂР°Р±РѕС‚РєР°';
    BuildTree(1,5,6);
    RateTree(1,false);}
    v:=0;
    if cacheUse>0 then v:=(cacheUse-cacheMiss)/cacheUse;
-   status:='Фаз: '+inttostr(phase)+
-    '. Поз: '+inttostr(estCounter)+' / '+inttostr(memsize-freeCnt)+
-    ' / '+inttostr(leafs)+
-    ', кэш: '+floattostrf(v,ffFixed,3,2)+
-    '. Время: '+FloatToStrF((GetTickCount-startTime)/1000,ffFixed,3,1);
+   status:='Р¤Р°Р·: '+inttostr(phase)+
+    '. РџРѕР·: '+inttostr(estCounter)+' / '+inttostr(memsize-freeCnt)+
+    ' / '+inttostr(totalLeafCount)+
+    ', РєСЌС€: '+floattostrf(v,ffFixed,3,2)+
+    '. Р’СЂРµРјСЏ: '+FloatToStrF((GetTickCount-startTime)/1000,ffFixed,3,1);
 
-   // Выбор оптимального хода
+   // Р’С‹Р±РѕСЂ РѕРїС‚РёРјР°Р»СЊРЅРѕРіРѕ С…РѕРґР°
    if data[1].firstChild=0 then begin
-    // нет ходов
-    CalcBeatable(data[1]);
-    gameover:=1; // пат
+    // РЅРµС‚ С…РѕРґРѕРІ
+    CalcBeatable(data[1],beatable);
+    gameState:=1; // РїР°С‚
     for i:=0 to 7 do
      for j:=0 to 7 do
-      if (data[1].field[i,j]=King+color) and (beatable[i,j] and color2>0) then
-       gameover:=2; // мат
+      if (data[1].GetCell(i,j)=King+color) and (beatable[i,j] and color2>0) then
+       gameState:=2; // РјР°С‚
     terminate;
     exit;
    end else begin
-    // Ходы есть - выбрать лучший
+    // РҐРѕРґС‹ РµСЃС‚СЊ - РІС‹Р±СЂР°С‚СЊ Р»СѓС‡С€РёР№
     i:=data[1].firstChild;
     j:=i;
     while i>0 do begin
      if data[i].rate=data[1].rate then begin
       j:=i; break;
      end;
-     i:=data[i].next;
+     i:=data[i].nextSibling;
     end;
    end;
 
-   if abs(data[j].rate)>100 then status:=status+' МАТ';
+   if abs(data[j].rate)>100 then status:=status+' РњРђРў';
 
-   // Обновить базу
+   // РћР±РЅРѕРІРёС‚СЊ Р±Р°Р·Сѓ
    if selfTeach then begin
     LoadRates;
     hash:=BoardHash(data[1]);
@@ -653,39 +680,43 @@ implementation
     SaveRates;
    end;
 
-   moveFrom:=data[j].lastTurnFrom;
-   moveTo:=data[j].lastTurnTo;
-   moveReady:=true;
+   moveReady:=j;
    except
     on e:exception do ErrorMessage(e.message);
    end;
 
   end;
 
- procedure ThinkThread.Execute;
+ procedure TThinkThread.Execute;
   begin
   // fillchar(cache,sizeof(cache),0);
    running:=true;
    if selfTeach then LoadRates;
    repeat
-    if not MoveReady and (gameover=0) and (board.WhiteTurn xor PlayerWhite) then
+    if (moveReady<0) and (gameState=0) and (curBoard.whiteTurn xor playerWhite) then
      DoThink
     else
-     sleep(9); // Если ход не наш - ничего не делать
+     sleep(9); // Р•СЃР»Рё С…РѕРґ РЅРµ РЅР°С€ - РЅРёС‡РµРіРѕ РЅРµ РґРµР»Р°С‚СЊ
    until terminated;
    running:=false;
   end;
 
- procedure ThinkThread.Reset;
+ procedure TThinkThread.Reset;
   begin
-   moveReady:=false;
-   gameover:=0;
+   moveReady:=-1;
+   gameState:=0;
    useLibrary:=true;
+  end;
+
+ procedure AiTimer;
+  begin
+
   end;
 
  procedure StartAI;
   begin
 
+   ResumeAI;
   end;
 
  procedure PauseAI;
@@ -700,6 +731,7 @@ implementation
 
  procedure StopAI;
   begin
+   PauseAI;
 
   end;
 

@@ -1,5 +1,5 @@
+п»ї// РћРєРЅРѕ РІРёР·СѓР°Р»РёР·Р°С†РёРё РґРµСЂРµРІР° РїРѕРёСЃРєР°: СЌС‚Рѕ Рё РґР»СЏ РѕС‚Р»Р°РґРєРё Рё РїСЂРѕСЃС‚Рѕ РґР»СЏ Р»СЋР±РѕРїС‹С‚СЃС‚РІР°
 unit TreeView;
-
 interface
 
 uses
@@ -26,15 +26,14 @@ var
   TreeWnd: TTreeWnd;
 
 implementation
- uses gamedata, main;
+ uses gamedata,main;
 
 {$R *.dfm}
 var
- // индексы эл-тов дерева в qu
+ // РёРЅРґРµРєСЃС‹ СЌР»-С‚РѕРІ РґРµСЂРµРІР° РІ qu
  items,itemspos:array[0..20,1..200] of integer;
- selidx:array[0..20] of integer; // индексы выбранных эл-тов (в data)
+ selidx:array[0..20] of integer; // РёРЅРґРµРєСЃС‹ РІС‹Р±СЂР°РЅРЅС‹С… СЌР»-С‚РѕРІ (РІ data)
  selmax:byte;
- saveboard:TBoard;
  saveGameover:integer;
 
 procedure TTreeWnd.BuildTree;
@@ -50,7 +49,7 @@ begin
    items[d,i]:=idx;
    inc(i);
    if (d<=selmax) and (selidx[d]=idx) then par:=idx;
-   idx:=data[idx].next;
+   idx:=data[idx].nextSibling;
   end;
  end;
 end;
@@ -68,11 +67,11 @@ begin
  with Canvas do begin
   brush.Color:=$F0F0F0;
   fillrect(clientrect);
-  // 1. вычислим положения эл-тов
+  // 1. РІС‹С‡РёСЃР»РёРј РїРѕР»РѕР¶РµРЅРёСЏ СЌР»-С‚РѕРІ
   itemspos[0,1]:=ClientHeight div 2;
   ypos:=itemspos[0,1];
   for d:=1 to selmax+1 do begin
-   // слой d:
+   // СЃР»РѕР№ d:
    c:=1;
    while items[d,c]>0 do inc(c);
    dec(c);
@@ -83,11 +82,11 @@ begin
    if itemspos[d,c]>clientHeight-10 then dec(add,itemspos[d,c]-(ClientHeight-10));
    for i:=1 to c do
     inc(itemspos[d,i],add);
-   // центр для след слоя
+   // С†РµРЅС‚СЂ РґР»СЏ СЃР»РµРґ СЃР»РѕСЏ
    for i:=1 to c do
     if items[d,i]=selidx[d] then ypos:=itemspos[d,i];
   end;
-  // 2. нарисуем линии
+  // 2. РЅР°СЂРёСЃСѓРµРј Р»РёРЅРёРё
   pen.Color:=$606060;
   for d:=1 to selmax+1 do begin
    i:=1;
@@ -107,15 +106,15 @@ begin
     inc(i);
    end;
   end;
-  // 3. нарисуем эл-ты
+  // 3. РЅР°СЂРёСЃСѓРµРј СЌР»-С‚С‹
   font.Size:=8;
   font.Name:='Arial';
   for d:=0 to selmax+1 do begin
    i:=1;
    if d>0 then begin
-    // подсветка решающего варианта
+    // РїРѕРґСЃРІРµС‚РєР° СЂРµС€Р°СЋС‰РµРіРѕ РІР°СЂРёР°РЅС‚Р°
     idx:=items[d,i];
-    j:=1; // здесь будет решающий
+    j:=1; // Р·РґРµСЃСЊ Р±СѓРґРµС‚ СЂРµС€Р°СЋС‰РёР№
     if data[idx].depth mod 2>0 then val:=-10000 else val:=10000;
     while items[d,i]>0 do begin
      if data[idx].depth mod 2>0 then begin
@@ -135,7 +134,7 @@ begin
      end;
     if i=j then pen.color:=$A0 else pen.color:=$101010;
     font.color:=pen.color;
-    // нет ли элемента в базе?
+    // РЅРµС‚ Р»Рё СЌР»РµРјРµРЅС‚Р° РІ Р±Р°Р·Рµ?
     hash:=BoardHash(data[items[d,i]]);
     for dbind:=0 to length(dbItems)-1 do
      if dbItems[dbInd].hash=hash then
@@ -172,15 +171,15 @@ end;
 
 procedure TTreeWnd.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
- board:=saveBoard;
+ MainForm.displayBoard:=curBoardIdx;
  MainForm.DrawBoard(sender);
- gameover:=saveGameover;
+ gameState:=saveGameover;
 end;
 
 procedure TTreeWnd.FormMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
- i,row,col,v:integer;
+ i,row,col,v,idx:integer;
 begin
  col:=(x+10) div 90;
  if col>selmax+1 then exit;
@@ -188,11 +187,12 @@ begin
  while items[col,i]>0 do begin
   if (y>=itemspos[col,i]-7) and (y<=itemspos[col,i]+7) then begin
    selmax:=col;
-   selidx[col]:=items[col,i];
-   board:=data[items[col,i]];
+   idx:=items[col,i];
+   selidx[col]:=idx;
+   MainForm.displayBoard:=idx;
    if Button=mbRight then begin
     v:=items[col,i];
-    ShowMEssage(inttostr(v)+' '+inttostr(data[v].weight));
+    ShowMessage(inttostr(v)+' '+data[v].weight.ToString);
    end;
    MainForm.DrawBoard(sender);
    break;
@@ -200,7 +200,7 @@ begin
   inc(i);
  end;
  BuildTree;
- invalidate;
+ Invalidate;
  MainForm.Estimate;
 end;
 
@@ -221,9 +221,9 @@ begin
  selidx[0]:=1;
  items[0,1]:=1;
  BuildTree;
- saveBoard:=board;
- saveGameover:=gameover;
- gameover:=4;
+ /// TODO: Pause AI
+ saveGameover:=gameState;
+ gameState:=4;
 end;
 
 end.
