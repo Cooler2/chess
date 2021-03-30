@@ -317,7 +317,7 @@ implementation
   var
    c:integer;
   begin
-   data[root].flags:=data[root].flags or $80;
+   data[root].flags:=data[root].flags or movVerified;
    c:=data[root].firstChild;
    while c>0 do begin
     CheckTree(c);

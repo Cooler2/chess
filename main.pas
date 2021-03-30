@@ -466,6 +466,8 @@ begin
   undoBtn.enabled:=false;
   redobtn.enabled:=false;
   menuBtn.enabled:=false;
+  turnWhiteBtn.Enabled:=false;
+  turnBlackBtn.Enabled:=false;
   StartAI;
  end else begin
   startBtn.Enabled:=false;
@@ -478,6 +480,8 @@ begin
   ResetBtn.enabled:=true;
   ClearBtn.enabled:=true;
   MenuBtn.enabled:=true;
+  turnWhiteBtn.Enabled:=true;
+  turnBlackBtn.Enabled:=true;
  end;
 end;
 

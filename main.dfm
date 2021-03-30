@@ -102,8 +102,8 @@ object MainForm: TMainForm
     OnClick = ShowTreeBtnClick
   end
   object StartBtn: TSpeedButton
-    Left = 518
-    Top = 364
+    Left = 517
+    Top = 365
     Width = 153
     Height = 32
     AllowAllUp = True

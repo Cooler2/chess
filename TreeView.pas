@@ -27,146 +27,178 @@ var
   TreeWnd: TTreeWnd;
 
 implementation
- uses gamedata,main;
+ uses gamedata,main,AI,Apus.MyServis;
 
 {$R *.dfm}
+type
+ TColumn=record
+  items,pos:array of integer;
+  procedure Clear;
+  procedure Add(v:integer);
+ end;
 var
- // индексы эл-тов дерева в qu
- items,itemspos:array[0..20,1..200] of integer;
- selidx:array[0..20] of integer; // индексы выбранных эл-тов (в data)
- selmax:byte;
+ // индексы эл-тов дерева в data [столбец,строка]
+ treeData:array of TColumn;
+ selIdx:array[0..30] of integer; // индексы цепочки выбранных эл-тов (в data)
  saveGameover:integer;
+
+procedure InitTree;
+ begin
+  SetLength(treeData,1);
+  treeData[0].Clear;
+  treeData[0].Add(curBoardIdx);
+  selIdx[0]:=curBoardIdx;
+ end;
 
 procedure TTreeWnd.BuildTree;
 var
- d,i,idx,c,par:integer;
+ d,i,idx,c,parent:integer;
 begin
- par:=1;
- for d:=1 to selmax+1 do begin
-  for i:=1 to 200 do items[d,i]:=0;
-  idx:=data[par].firstChild;
-  i:=1;
+ parent:=curBoardIdx;
+ for d:=1 to high(treeData) do begin
+  treeData[i].Clear;
+  idx:=data[parent].firstChild;
   while idx>0 do begin
-   items[d,i]:=idx;
-   inc(i);
-   if (d<=selmax) and (selidx[d]=idx) then par:=idx;
+   treeData[i].Add(idx);
+   if selidx[d]=idx then parent:=idx;
    idx:=data[idx].nextSibling;
   end;
  end;
 end;
 
+procedure UpdateTreePos(clientHeight:integer);
+ var
+  i,c,d,yPos,vAdd:integer;
+ begin
+  ypos:=clientHeight div 2;
+  treeData[0].pos[0]:=yPos;
+  for d:=1 to high(treeData) do
+   with treeData[d] do begin // слой d:
+    c:=high(items);
+    if c<0 then break; // пустой уровень
+    for i:=0 to c do
+     pos[i]:=ypos-(c*18) div 2+(i-1)*18;
+    vAdd:=0;
+    if pos[0]<10 then inc(vAdd,10-pos[0]);
+    if pos[c]>clientHeight-10 then dec(vAdd,pos[c]-(clientHeight-10));
+    for i:=0 to c do
+     inc(pos[i],vAdd);
+   // центр для след слоя
+   for i:=0 to c do
+    if items[i]=selidx[d] then
+     ypos:=pos[i];
+  end;
+ end;
+
+procedure DrawTreeLines(canvas:TCanvas);
+ var
+  i,j,d,y:integer;
+ begin
+  for d:=1 to high(treeData) do begin
+   i:=0;
+   // поиск предка в предыдущем уровне
+   while treeData[d-1].items[i]>=0 do
+    if treeData[d-1].items[i]<>selidx[d-1] then
+     inc(i)
+    else // отрисовка
+     with treeData[d] do begin
+      j:=0;
+      while items[j]>=0 do begin
+       canvas.moveto(25+d*90-45,pos[j]);
+       canvas.lineto(25+d*90-35,pos[j]);
+       inc(j);
+      end;
+      // вертикальная линия
+      canvas.moveto(25+d*90-45,pos[0]);
+      canvas.lineto(25+d*90-45,pos[j-1]);
+      // горизонтальная линия
+      y:=treeData[d-1].pos[i];
+      canvas.moveto(25+d*90-65,y);
+      canvas.lineto(25+d*90-45,y);
+      break;
+     end;
+  end;
+ end;
+
+procedure DrawTreeNodes(canvas:TCanvas);
+ var
+  i,j,d,idx,dbInd,cx,cy:integer;
+  st,st2,st3:string;
+  val:single;
+  cell1,cell2:byte;
+  hash:int64;
+  ch:char;
+ begin
+  for d:=0 to high(treeData) do
+   with treeData[d] do begin
+    // выбор решающего варианта для подсветки
+    if d>0 then begin
+     idx:=items[0];
+     j:=0; // здесь будет решающий
+     if data[idx].depth mod 2>0 then val:=-10000 else val:=10000;
+     for i:=0 to high(items) do begin
+      if data[idx].depth mod 2>0 then begin
+       if data[items[i]].rate>val then begin val:=data[items[i]].rate; j:=i; end;
+      end else begin
+       if data[items[i]].rate<val then begin val:=data[items[i]].rate; j:=i; end;
+      end;
+     end;
+    end;
+
+    for i:=0 to high(items) do begin
+     if selidx[d]=items[i] then canvas.brush.color:=$C0D0E0
+      else begin
+       if data[items[i]].flags and movVerified=0 then canvas.brush.color:=$E0E0E0
+        else canvas.brush.color:=$E0C0C0;
+      end;
+     if i=j then canvas.pen.color:=$A0 else canvas.pen.color:=$101010;
+     canvas.font.color:=canvas.pen.color;
+     // нет ли элемента в базе?
+     hash:=BoardHash(data[items[i]]);
+     for dbInd:=0 to high(dbItems) do
+      if dbItems[dbInd].hash=hash then
+       canvas.font.color:=$8000;
+
+     cx:=25+d*90;
+     cy:=pos[i];
+     if d>0 then
+      canvas.RoundRect(cx-37,cy-7,cx+37,cy+7,5,5)
+     else
+      canvas.RoundRect(cx-22,cy-10,cx+32,cy+10,7,7);
+     idx:=items[i];
+     if d>0 then begin
+      cell1:=data[idx].lastTurnFrom;
+      cell2:=data[idx].lastTurnTo;
+      if data[idx].flags and movBeat>0 then ch:=':' else ch:='-';
+      if data[idx].flags and movCheck>0 then st2:='+' else st2:='';
+       st3:=FloatToStrF(data[idx].rate,ffFixed,4,3);
+     if abs(data[idx].rate)>210 then
+       st3:=FloatToStrF(data[idx].rate,ffFixed,4,0);
+      st:=NameCell(cell1 and $F,cell1 shr 4)+ch+NameCell(cell2 and $F,cell2 shr 4)+st2+
+       ' '+st3;
+     end else
+      st:='   Root';
+     canvas.brush.Style:=bsClear;
+     canvas.TextOut(cx-canvas.TextWidth(st) div 2,cy-7,st);
+     canvas.brush.Style:=bsSolid;
+    end;
+  end;
+ end;
+
 procedure TTreeWnd.DrawTree;
-var
- i,j,d,idx,c,ypos,add,cx,cy:integer;
- st,st2,st3:string;
- cell1,cell2:byte;
- val:single;
- ch:char;
- hash:int64;
- dbind:integer;
 begin
  with Canvas do begin
   brush.Color:=$F0F0F0;
   fillrect(clientrect);
   // 1. вычислим положения эл-тов
-  itemspos[0,1]:=ClientHeight div 2;
-  ypos:=itemspos[0,1];
-  for d:=1 to selmax+1 do begin
-   // слой d:
-   c:=1;
-   while items[d,c]>0 do inc(c);
-   dec(c);
-   for i:=1 to c do
-    itemspos[d,i]:=ypos-((c-1)*18) div 2+(i-1)*18;
-   add:=0;
-   if itemspos[d,1]<10 then inc(add,10-itemspos[d,1]);
-   if itemspos[d,c]>clientHeight-10 then dec(add,itemspos[d,c]-(ClientHeight-10));
-   for i:=1 to c do
-    inc(itemspos[d,i],add);
-   // центр для след слоя
-   for i:=1 to c do
-    if items[d,i]=selidx[d] then ypos:=itemspos[d,i];
-  end;
+  UpdateTreePos(clientHeight);
   // 2. нарисуем линии
   pen.Color:=$606060;
-  for d:=1 to selmax+1 do begin
-   i:=1;
-   while items[d-1,i]>0 do begin
-    if items[d-1,i]=selidx[d-1] then begin
-     j:=1;
-     while items[d,j]>0 do begin
-      moveto(25+d*90-45,itemspos[d,j]);
-      lineto(25+d*90-35,itemspos[d,j]);
-      inc(j);
-     end;
-     moveto(25+d*90-45,itemspos[d,1]);
-     lineto(25+d*90-45,itemspos[d,j-1]);
-     moveto(25+d*90-65,itemspos[d-1,i]);
-     lineto(25+d*90-45,itemspos[d-1,i]);
-    end;
-    inc(i);
-   end;
-  end;
+  DrawTreeLines(canvas);
   // 3. нарисуем эл-ты
   font.Size:=8;
   font.Name:='Arial';
-  for d:=0 to selmax+1 do begin
-   i:=1;
-   if d>0 then begin
-    // подсветка решающего варианта
-    idx:=items[d,i];
-    j:=1; // здесь будет решающий
-    if data[idx].depth mod 2>0 then val:=-10000 else val:=10000;
-    while items[d,i]>0 do begin
-     if data[idx].depth mod 2>0 then begin
-      if data[items[d,i]].rate>val then begin val:=data[items[d,i]].rate; j:=i; end;
-     end else begin
-      if data[items[d,i]].rate<val then begin val:=data[items[d,i]].rate; j:=i; end;
-     end;
-     inc(i);
-    end;
-   end;
-   i:=1;
-   while items[d,i]>0 do begin
-    if selidx[d]=items[d,i] then brush.color:=$C0D0E0
-     else begin
-      if data[items[d,i]].flags and $80=0 then brush.color:=$E0E0E0
-       else brush.color:=$E0C0C0;
-     end;
-    if i=j then pen.color:=$A0 else pen.color:=$101010;
-    font.color:=pen.color;
-    // нет ли элемента в базе?
-    hash:=BoardHash(data[items[d,i]]);
-    for dbind:=0 to length(dbItems)-1 do
-     if dbItems[dbInd].hash=hash then
-      font.color:=$8000;
-
-    cx:=25+d*90;
-    cy:=itemspos[d,i];
-    if d>0 then
-     RoundRect(cx-37,cy-7,cx+37,cy+7,5,5)
-    else
-     RoundRect(cx-22,cy-10,cx+32,cy+10,7,7);
-    idx:=items[d,i];
-    if d>0 then begin
-     cell1:=data[idx].lastTurnFrom;
-     cell2:=data[idx].lastTurnTo;
-     if data[idx].flags and movBeat>0 then ch:=':' else ch:='-';
-     if data[idx].flags and movCheck>0 then st2:='+' else st2:='';
-     st3:=FloatToStrF(data[idx].rate,ffFixed,4,3);
-     if abs(data[idx].rate)>210 then
-      st3:=FloatToStrF(data[idx].rate,ffFixed,4,0);
-     st:=NameCell(cell1 and $F,cell1 shr 4)+ch+NameCell(cell2 and $F,cell2 shr 4)+st2+
-      ' '+st3;
-    end else
-     st:='   Root';
-    brush.Style:=bsClear;
-    TextOut(cx-TextWidth(st) div 2,cy-7,st);
-    brush.Style:=bsSolid;
-    inc(i);
-   end;
-  end;
-
+  DrawTreeNodes(canvas);
  end;
 end;
 
@@ -175,6 +207,7 @@ begin
  MainForm.displayBoard:=curBoardIdx;
  MainForm.DrawBoard(sender);
  gameState:=saveGameover;
+ ResumeAI;
 end;
 
 procedure TTreeWnd.FormMouseDown(Sender: TObject; Button: TMouseButton;
@@ -183,23 +216,22 @@ var
  i,row,col,v,idx:integer;
 begin
  col:=(x+10) div 90;
- if col>selmax+1 then exit;
+ if col>high(treeData) then exit;
  i:=1;
- while items[col,i]>0 do begin
-  if (y>=itemspos[col,i]-7) and (y<=itemspos[col,i]+7) then begin
-   selmax:=col;
-   idx:=items[col,i];
-   selidx[col]:=idx;
-   MainForm.displayBoard:=idx;
-   if Button=mbRight then begin
-    v:=items[col,i];
-    ShowMessage(inttostr(v)+' '+data[v].weight.ToString);
+ with treeData[col] do
+  for i:=0 to high(items) do
+   if (y>=pos[i]-7) and (y<=pos[i]+7) then begin
+    idx:=items[i];
+    selidx[col]:=idx;
+    selIdx[col+1]:=-1;
+    mainForm.displayBoard:=idx;
+    if Button=mbRight then begin
+     v:=items[i];
+     ShowMessage(inttostr(v)+' '+data[v].weight.ToString,'');
+    end;
+    mainForm.DrawBoard(sender);
+    break;
    end;
-   MainForm.DrawBoard(sender);
-   break;
-  end;
-  inc(i);
- end;
  BuildTree;
  Invalidate;
  MainForm.Estimate;
@@ -217,14 +249,29 @@ end;
 
 procedure TTreeWnd.FormShow(Sender: TObject);
 begin
- selmax:=0;
- fillchar(selidx,sizeof(selidx),0);
- selidx[0]:=1;
- items[0,1]:=1;
+ PauseAI;
+ InitTree;
  BuildTree;
- /// TODO: Pause AI
  saveGameover:=gameState;
  gameState:=4;
 end;
+
+{ TColumn }
+
+procedure TColumn.Add(v:integer);
+ var
+  n:integer;
+ begin
+  n:=length(items);
+  SetLength(items,n+1);
+  SetLength(pos,n+1);
+  items[n]:=v;
+ end;
+
+procedure TColumn.Clear;
+ begin
+  SetLength(items,0);
+  SetLength(pos,0);
+ end;
 
 end.

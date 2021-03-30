@@ -42,6 +42,7 @@ const
  movRepeat    = $10; // конец игры из-за повторения позиций
  movDB        = $20; // позиция оценена из БД
  movLib       = $40; // ход взят из библиотеки
+ movVerified  = $80;
 
  movGameOver = movCheckmate+movStalemate+movRepeat; // один из вариантов конца игры
 
@@ -243,6 +244,8 @@ implementation
    ASSERT(freeCnt>0);
    dec(freeCnt);
    result:=freeList[freeCnt];
+   data[result].firstChild:=-1;
+   data[result].lastChild:=-1;
   end;
 
  procedure FreeBoard(index:integer); inline;
@@ -257,9 +260,7 @@ implementation
    result:=AllocBoard;
    with data[result] do begin
     parent:=_parent;
-    nextSibling:=0; prevSibling:=0;
-    firstChild:=0;
-    lastChild:=0;
+    nextSibling:=-1; prevSibling:=-1;
     cells:=data[_parent].cells;
     depth:=data[_parent].depth+1;
     rFlags:=data[_parent].rFlags;
@@ -333,8 +334,7 @@ implementation
     freeList[freecnt]:=i;
     inc(freecnt);
    end;
-   dec(FreeCnt); // Alloc node #0 for root
-   curBoardIdx:=0;
+   curBoardIdx:=AllocBoard;
    curBoard:=@data[curBoardIdx];
 
    // Начальная позиция
