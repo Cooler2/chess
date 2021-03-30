@@ -289,6 +289,10 @@ implementation
     inc(pb);
     pb^:=m;
    end;
+  procedure Finish(var moves:TMovesList;pb:PByte); inline;
+   begin
+    moves[0]:=UIntPtr(pb)-UIntPtr(@moves);
+   end;
   begin
    with board do begin
     pb:=@moves;
@@ -320,6 +324,7 @@ implementation
        if (y=3) and (x<70) and (GetCell(x+1,y)=PawnWhite) and
          (lastTurnFrom=fromPos-$20+1) and (lastTurnTo=fromPos+1) then AddMove(pb,fromPos-$10+1);
       end;
+      Finish(moves,pb);
       exit;
      end;
 
@@ -335,6 +340,8 @@ implementation
 
      if (x<6) and (y>0) and (GetCell(x+2,y-1) and ColorMask<>color) then AddMove(pb,fromPos-$10+2);
      if (x<6) and (y<7) and (GetCell(x+2,y+1) and ColorMask<>color) then AddMove(pb,fromPos+$10+2);
+
+     Finish(moves,pb);
      exit;
     end;
 
@@ -382,6 +389,7 @@ implementation
          ((beatable[4,7] or beatable[5,7] or beatable[6,7]) and White=0) then
            AddMove(pb,fromPos+2);
      end;
+     Finish(moves,pb);
      exit;
     end;
 
@@ -457,6 +465,7 @@ implementation
      end;
     end;
    end;
+   Finish(moves,pb);
   end;
 
  procedure DoMove(var board:TBoard;from,target:byte);

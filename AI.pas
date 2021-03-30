@@ -62,7 +62,7 @@ implementation
    n:=1;
    j:=b.parent;
    while j>0 do begin
-    if CompareBoards(b^,data[j])=0 then begin
+    if CompareBoards(b^,data[j]) then begin
      inc(n);
      if n>=3 then begin
       b.BlackRate:=1;

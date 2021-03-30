@@ -68,13 +68,15 @@ type
   cells:TField; // [x,y]
   rFlags:byte;  // флаги рокировки 1,2 - ладьи, 4 - король
   whiteTurn:boolean; // чей сейчас ход
-  depth:byte;
+  padding:word;
+  // --- поля выше этой строки являются состоянием позиции: участвуют в сравнении и вычислении хэша
   weight:single;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист
+  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева
+  depth:byte;
   whiteRate,blackRate,rate:single; // оценки позиции
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
   flags:byte; // флаги последнего хода
-  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева
   procedure Clear;
   function CellIsEmpty(x,y:integer):boolean; inline;
   function CellOccupied(x,y:integer):boolean; inline;
@@ -86,7 +88,7 @@ type
   function ToString:string;
  end;
 
- TMovesList=array[0..199] of byte; // [0] - number of moves, [1]..[n] - target cell position
+ TMovesList=array[0..63] of byte; // [0] - number of moves, [1]..[n] - target cell position
 
  // Сохранённая оценка позиции
  TCacheItem=record
@@ -155,8 +157,8 @@ var
  procedure InitNewGame;
 
  // Сравнение позиций для их сортировки
- function CompareBoards(var b1,b2:TBoard):integer; overload;
- function CompareBoards(b1,b2:integer):integer; overload; inline;
+ function CompareBoards(var b1,b2:TBoard):boolean; overload;
+ //function CompareBoards(b1,b2:integer):integer; overload; inline;
 
  // Вычисление хэша позиции
  function BoardHash(var b:TBoard):int64;
@@ -239,14 +241,14 @@ implementation
  function AllocBoard:integer;
   begin
    ASSERT(freeCnt>0);
-   result:=freeList[freeCnt];
    dec(freeCnt);
+   result:=freeList[freeCnt];
   end;
 
  procedure FreeBoard(index:integer); inline;
   begin
-   inc(freecnt);
    freeList[freecnt]:=index;
+   inc(freecnt);
   end;
 
  function AddChild(_parent:integer):integer;
@@ -374,44 +376,14 @@ implementation
    result:=chr(97+x)+inttostr(y+1);
   end;
 
- function CompareBoards(b1,b2:integer):integer;
+{ function CompareBoards(b1,b2:integer):integer;
   begin
    result:=CompareBoards(data[b1],data[b2]);
-  end;
+  end;}
 
- function CompareBoards(var b1,b2:TBoard):integer;
-  asm
-   push esi
-   push edi
-   mov esi,b1
-   mov edi,b2
-   mov ecx,66
-@01:
-   mov dl,[esi]
-   cmp dl,[edi]
-   ja @above
-   jb @below
-   inc esi
-   inc edi
-   dec ecx
-   jnz @01
-   xor eax,eax
-   pop edi
-   pop esi
-   pop ebp
-   ret 8
-@above:
-   mov eax,1
-   pop edi
-   pop esi
-   pop ebp
-   ret 8
-@below:
-   mov eax,-1
-   pop edi
-   pop esi
-   pop ebp
-   ret 8
+ function CompareBoards(var b1,b2:TBoard):boolean;
+  begin
+   result:=CompareMem(@b1,@b2,sizeof(TField)+2);
   end;
 
  function BoardHash(var b:TBoard):int64;

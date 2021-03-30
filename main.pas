@@ -1,4 +1,5 @@
-﻿// Главное окно игры, интерфейс.
+﻿// Главное окно игры, интерфейс
+{$R+}
 unit main;
 interface
 
@@ -76,11 +77,10 @@ type
     { Private declarations }
   public
     { Public declarations }
-    selected:array[0..7,0..7] of byte;
+    selected:array[0..7,0..7] of byte; // 1 - клетка с выделенной фигурой, 2 - доступная для хода
     animation:integer; // фаза анимации движения фигуры
     displayBoard:integer; // индекс отображаемой позиции (может отличаться от текущей в режиме просмотра дерева)
     curPiecePos:byte;     // позиция выбранной фигуры
-    autoChangedTurn:boolean;
     procedure ClearSelected;
     procedure MakeAiTurn;
     procedure MakeExternalTurn;
@@ -107,7 +107,9 @@ begin
  MyRec:=Default(TMyRec);
  UseLogFile('chess.log');
  curPiecePos:=255;
+ animation:=0;
  InitNewGame;
+ displayBoard:=curBoardIdx;
  DrawBoard(sender);
 end;
 
@@ -300,6 +302,7 @@ var
  moves:TMovesList;
  beatable:TBeatable;
 begin
+ try
  if animation>0 then exit;
  i:=(x-15) div 60;
  j:=(y-15) div 60;
@@ -347,7 +350,7 @@ begin
       PauseAI;
       curBoardIdx:=AddChild(curBoardIdx);
       curBoard:=@data[curBoardIdx];
-      curBoard^:=b;
+      DoMove(curBoard^,curPiecePos,i+j shl 4);
       onTurnMade;
      end;
     end;
@@ -375,6 +378,10 @@ begin
    end;
    SetCell(i,j,piece);
   end;
+
+ except
+  on e:exception do ForceLogMessage('Click error: '+ExceptionMsg(e));
+ end;
 
  DrawBoard(sender);
 end;
@@ -466,6 +473,7 @@ end;
 
 procedure TMainForm.TimerTimer(Sender: TObject);
 begin
+ try
  // Анимация хода - двигаем фигуру
  if animation>0 then begin
   inc(animation);
@@ -501,6 +509,9 @@ begin
 
  if StartBtn.Down and not IsPlayerTurn and (animation=0)
     and (moveReady>0) then MakeAiTurn;
+ except
+  on e:Exception do ForceLogMessage('Error in Timer: '+ExceptionMsg(e));
+ end;
 end;
 
 procedure TMainForm.AddLastTurnNote;
@@ -515,7 +526,7 @@ begin
   x:=lastTurnTo and $F;
   y:=lastTurnTo shr 4;
   v:=GetPieceType(x,y);
-  case v and $F of
+  case v of
    Knight:st:='К';
    Queen:st:='Ф';
    Rook:st:='Л';
@@ -531,12 +542,12 @@ begin
    for j:=0 to 7 do
     if (GetCell(i,j)=KingWhite) and (beatable[i,j] and Black>0) or
        (GetCell(i,j)=KingBlack) and (beatable[i,j] and White>0) then st:=st+'+';
-  if (v and $F=King) and (x=LastTurnFrom and $F-2) then st:='0-0-0';
-  if (v and $F=King) and (x=LastTurnFrom and $F+2) then st:='0-0';
+  if (v=King) and (x=LastTurnFrom and $F-2) then st:='0-0-0';
+  if (v=King) and (x=LastTurnFrom and $F+2) then st:='0-0';
 
   while length(st)<7 do st:=st+' ';
   s2:=''; if memo.lines.count<9 then s2:=' ';
-  if v and ColorMask=Black then
+  if GetPieceColor(x,y)=Black then
    memo.Lines[memo.Lines.Count-1]:=memo.Lines[memo.Lines.Count-1]+' '+st
   else
    memo.Lines.Add(s2+inttostr(memo.lines.Count+1)+' '+st);
@@ -561,6 +572,7 @@ var
  c:cardinal;
  x1,y1,x2,y2:integer;
 begin
+ try
  with PBox.Canvas do begin
   brush.Color:=$B0CADA;
   FillRect(rect(0,0,510,510));
@@ -577,8 +589,9 @@ begin
     c:=0;
     k:=j; v:=i;
     if playerWhite then k:=7-k else v:=7-i;
-    if selected[v,k] and 2>0 then c:=$A0B0E0;
-    if selected[v,k] and 1>0 then c:=$A0C0D0;
+    // выделенные клетки
+    if selected[v,k] and 2>0 then c:=$90C090;
+    if selected[v,k] and 1>0 then c:=$D0C090;
     if c>0 then
     for k:=0 to 2 do begin
      pen.color:=c;
@@ -619,22 +632,25 @@ begin
 
   // Анимация хода
   if animation>0 then
-  with data[displayBoard] do begin
-   v:=lastTurnTo and $F;
-   k:=lastTurnTo shr 4;
-   x1:=lastTurnFrom and $F;
-   y1:=lastTurnFrom shr 4;
-   x2:=lastTurnTo and $F;
-   y2:=lastTurnTo shr 4;
-   if playerWhite then begin
-    y1:=7-y1; y2:=7-y2;
-   end else begin
-    x1:=7-x1; x2:=7-x2;
+   with data[displayBoard] do begin
+    v:=lastTurnTo and $F;
+    k:=lastTurnTo shr 4;
+    x1:=lastTurnFrom and $F;
+    y1:=lastTurnFrom shr 4;
+    x2:=lastTurnTo and $F;
+    y2:=lastTurnTo shr 4;
+    if playerWhite then begin
+     y1:=7-y1; y2:=7-y2;
+    end else begin
+     x1:=7-x1; x2:=7-x2;
+    end;
+    i:=15+round(60*(x1+(animation/9)*(x2-x1)));
+    j:=15+round(60*(y1+(animation/9)*(y2-y1)));
+    Pieces.Draw(PBox.canvas,i,j,GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
    end;
-   i:=15+round(60*(x1+(animation/9)*(x2-x1)));
-   j:=15+round(60*(y1+(animation/9)*(y2-y1)));
-   Pieces.Draw(PBox.canvas,i,j,GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
-  end;
+ end;
+ except
+  on e:Exception do ForceLogMessage('Paint error: '+ExceptionMsg(e));
  end;
 end;
 
