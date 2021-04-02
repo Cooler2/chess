@@ -15,6 +15,7 @@ type
     procedure FormResize(Sender: TObject);
     procedure FormMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
   private
     { Private declarations }
   public
@@ -28,6 +29,9 @@ var
 
 implementation
  uses gamedata,main,AI,Apus.MyServis;
+
+const
+ COL_WIDTH = 90;
 
 {$R *.dfm}
 type
@@ -44,7 +48,7 @@ var
 
 procedure InitTree;
  begin
-  SetLength(treeData,1);
+  SetLength(treeData,2);
   treeData[0].Clear;
   treeData[0].Add(curBoardIdx);
   selIdx[0]:=curBoardIdx;
@@ -52,14 +56,14 @@ procedure InitTree;
 
 procedure TTreeWnd.BuildTree;
 var
- d,i,idx,c,parent:integer;
+ d,idx,c,parent:integer;
 begin
  parent:=curBoardIdx;
  for d:=1 to high(treeData) do begin
-  treeData[i].Clear;
+  treeData[d].Clear;
   idx:=data[parent].firstChild;
   while idx>0 do begin
-   treeData[i].Add(idx);
+   treeData[d].Add(idx);
    if selidx[d]=idx then parent:=idx;
    idx:=data[idx].nextSibling;
   end;
@@ -77,7 +81,7 @@ procedure UpdateTreePos(clientHeight:integer);
     c:=high(items);
     if c<0 then break; // пустой уровень
     for i:=0 to c do
-     pos[i]:=ypos-(c*18) div 2+(i-1)*18;
+     pos[i]:=ypos-(c*18) div 2+i*18;
     vAdd:=0;
     if pos[0]<10 then inc(vAdd,10-pos[0]);
     if pos[c]>clientHeight-10 then dec(vAdd,pos[c]-(clientHeight-10));
@@ -95,26 +99,22 @@ procedure DrawTreeLines(canvas:TCanvas);
   i,j,d,y:integer;
  begin
   for d:=1 to high(treeData) do begin
-   i:=0;
+   if length(treeData[d].items)=0 then exit;
    // поиск предка в предыдущем уровне
-   while treeData[d-1].items[i]>=0 do
-    if treeData[d-1].items[i]<>selidx[d-1] then
-     inc(i)
-    else // отрисовка
+   for i:=0 to high(treeData[d-1].items) do
+    if treeData[d-1].items[i]=selidx[d-1] then
      with treeData[d] do begin
-      j:=0;
-      while items[j]>=0 do begin
-       canvas.moveto(25+d*90-45,pos[j]);
-       canvas.lineto(25+d*90-35,pos[j]);
-       inc(j);
+      for j:=0 to high(items) do begin
+       canvas.moveto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[j]);
+       canvas.lineto(25+d*COL_WIDTH-COL_WIDTH div 2+10,pos[j]);
       end;
       // вертикальная линия
-      canvas.moveto(25+d*90-45,pos[0]);
-      canvas.lineto(25+d*90-45,pos[j-1]);
+      canvas.moveto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[0]);
+      canvas.lineto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[j-1]);
       // горизонтальная линия
       y:=treeData[d-1].pos[i];
-      canvas.moveto(25+d*90-65,y);
-      canvas.lineto(25+d*90-45,y);
+      canvas.moveto(25+d*COL_WIDTH-COL_WIDTH div 2-10,y);
+      canvas.lineto(25+d*COL_WIDTH-COL_WIDTH div 2,y);
       break;
      end;
   end;
@@ -131,6 +131,7 @@ procedure DrawTreeNodes(canvas:TCanvas);
  begin
   for d:=0 to high(treeData) do
    with treeData[d] do begin
+    if length(items)=0 then exit;
     // выбор решающего варианта для подсветки
     if d>0 then begin
      idx:=items[0];
@@ -159,12 +160,12 @@ procedure DrawTreeNodes(canvas:TCanvas);
       if dbItems[dbInd].hash=hash then
        canvas.font.color:=$8000;
 
-     cx:=25+d*90;
+     cx:=25+d*COL_WIDTH;
      cy:=pos[i];
      if d>0 then
-      canvas.RoundRect(cx-37,cy-7,cx+37,cy+7,5,5)
+      canvas.RoundRect(cx-COL_WIDTH div 2+6,cy-7,cx+COL_WIDTH div 2-6,cy+7,5,5)
      else
-      canvas.RoundRect(cx-22,cy-10,cx+32,cy+10,7,7);
+      canvas.RoundRect(cx-22,cy-12,cx+32,cy+12,7,7);
      idx:=items[i];
      if d>0 then begin
       cell1:=data[idx].lastTurnFrom;
@@ -210,12 +211,18 @@ begin
  ResumeAI;
 end;
 
+procedure TTreeWnd.FormKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+ if key=VK_ESCAPE then Close;
+end;
+
 procedure TTreeWnd.FormMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
  i,row,col,v,idx:integer;
 begin
- col:=(x+10) div 90;
+ col:=(x+10) div COL_WIDTH;
  if col>high(treeData) then exit;
  i:=1;
  with treeData[col] do
@@ -232,9 +239,10 @@ begin
     mainForm.DrawBoard(sender);
     break;
    end;
+ SetLength(treeData,col+2);
  BuildTree;
  Invalidate;
- MainForm.Estimate;
+ MainForm.Estimate(true);
 end;
 
 procedure TTreeWnd.FormPaint(Sender: TObject);
@@ -266,6 +274,7 @@ procedure TColumn.Add(v:integer);
   SetLength(items,n+1);
   SetLength(pos,n+1);
   items[n]:=v;
+  pos[n]:=0;
  end;
 
 procedure TColumn.Clear;

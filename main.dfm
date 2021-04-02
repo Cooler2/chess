@@ -1,79 +1,96 @@
 object MainForm: TMainForm
   Left = 0
   Top = 0
+  Anchors = [akTop, akRight]
   BorderIcons = [biSystemMenu, biMinimize]
   BorderStyle = bsSingle
   Caption = 'Spider'#39's Chess'
-  ClientHeight = 534
-  ClientWidth = 677
+  ClientHeight = 571
+  ClientWidth = 710
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
+  KeyPreview = True
   OldCreateOrder = False
   Position = poScreenCenter
   PrintScale = poNone
   Scaled = False
   ShowHint = True
-  OnActivate = FormActivate
   OnClose = FormClose
+  OnCreate = FormCreate
+  OnKeyDown = FormKeyDown
+  DesignSize = (
+    710
+    571)
   PixelsPerInch = 96
   TextHeight = 13
   object SwapBtn: TSpeedButton
-    Left = 517
+    Left = 549
     Top = 29
     Width = 154
     Height = 25
     Hint = #1055#1077#1088#1077#1074#1077#1088#1085#1091#1090#1100' '#1076#1086#1089#1082#1091': '#1082#1086#1084#1087#1100#1102#1090#1077#1088' '#1080#1075#1088#1072#1077#1090' '#1090#1086#1083#1100#1082#1086' '#1079#1072' '#1074#1077#1088#1093#1085#1102#1102' '#1089#1090#1086#1088#1086#1085#1091
+    Anchors = [akTop, akRight]
     Caption = #1055#1086#1084#1077#1085#1103#1090#1100' '#1084#1077#1089#1090#1072#1084#1080
     OnClick = SwapBtnClick
+    ExplicitLeft = 517
   end
   object ResetBtn: TSpeedButton
-    Left = 517
+    Left = 549
     Top = 2
     Width = 154
     Height = 25
     Hint = #1042#1099#1089#1090#1072#1074#1080#1090#1100' '#1085#1072#1095#1072#1083#1100#1085#1091#1102' '#1087#1086#1079#1080#1094#1080#1102
+    Anchors = [akTop, akRight]
     Caption = #1053#1086#1074#1072#1103' '#1080#1075#1088#1072
     OnClick = ResetBtnClick
+    ExplicitLeft = 517
   end
   object UndoBtn: TSpeedButton
-    Left = 518
+    Left = 550
     Top = 333
     Width = 36
     Height = 26
     Hint = #1061#1086#1076' '#1085#1072#1079#1072#1076
+    Anchors = [akTop, akRight]
     Caption = '<<'
     Enabled = False
     OnClick = UndoBtnClick
+    ExplicitLeft = 518
   end
   object turnWhiteBtn: TSpeedButton
-    Left = 518
+    Left = 550
     Top = 87
     Width = 72
     Height = 25
+    Anchors = [akTop, akRight]
     GroupIndex = 5
     Down = True
     Caption = #1061#1086#1076' '#1073#1077#1083#1099#1093
     OnClick = NowTurnGroupClick
+    ExplicitLeft = 518
   end
   object TurnBlackBtn: TSpeedButton
-    Left = 600
+    Left = 632
     Top = 87
     Width = 72
     Height = 25
+    Anchors = [akTop, akRight]
     GroupIndex = 5
     Caption = #1061#1086#1076' '#1095#1077#1088#1085#1099#1093
     OnClick = NowTurnGroupClick
+    ExplicitLeft = 600
   end
   object MenuBtn: TSpeedButton
-    Left = 555
+    Left = 587
     Top = 333
     Width = 80
     Height = 26
     AllowAllUp = True
+    Anchors = [akTop, akRight]
     Caption = #1052#1045#1053#1070
     Glyph.Data = {
       76010000424D7601000000000000760000002800000020000000100000000100
@@ -90,23 +107,27 @@ object MainForm: TMainForm
       3333333333333333333333333333333333333333333333333333}
     NumGlyphs = 2
     OnMouseUp = LibBtnMouseDown
+    ExplicitLeft = 555
   end
   object ShowTreeBtn: TSpeedButton
-    Left = 518
+    Left = 550
     Top = 398
     Width = 153
     Height = 25
     Hint = #1055#1086#1082#1072#1079#1072#1090#1100' '#1076#1077#1088#1077#1074#1086' '#1087#1086#1079#1080#1094#1080#1081' '#1080' '#1080#1093' '#1086#1094#1077#1085#1082#1080
     AllowAllUp = True
+    Anchors = [akTop, akRight]
     Caption = #1044#1077#1088#1077#1074#1086' '#1074#1072#1088#1080#1072#1085#1090#1086#1074
     OnClick = ShowTreeBtnClick
+    ExplicitLeft = 518
   end
   object StartBtn: TSpeedButton
-    Left = 517
+    Left = 549
     Top = 365
     Width = 153
     Height = 32
     AllowAllUp = True
+    Anchors = [akTop, akRight]
     GroupIndex = 1
     Caption = 'Start AI'
     Font.Charset = DEFAULT_CHARSET
@@ -116,57 +137,64 @@ object MainForm: TMainForm
     Font.Style = [fsBold]
     ParentFont = False
     OnClick = StartBtnClick
+    ExplicitLeft = 517
   end
   object ClearBtn: TSpeedButton
-    Left = 517
+    Left = 549
     Top = 56
     Width = 154
     Height = 25
     Hint = #1053#1072#1095#1072#1090#1100' '#1085#1086#1074#1091#1102' '#1080#1075#1088#1091' '#1089' '#1095#1080#1089#1090#1086#1081' '#1076#1086#1089#1082#1086#1081
+    Anchors = [akTop, akRight]
     Caption = #1054#1095#1080#1089#1090#1080#1090#1100' '#1076#1086#1089#1082#1091
     OnClick = ClearBtnClick
+    ExplicitLeft = 517
   end
   object Label1: TLabel
-    Left = 566
+    Left = 598
     Top = 429
     Width = 47
     Height = 13
+    Anchors = [akTop, akRight]
     Caption = #1059#1088#1086#1074#1077#1085#1100':'
+    ExplicitLeft = 566
   end
   object RedoBtn: TSpeedButton
-    Left = 636
+    Left = 668
     Top = 333
     Width = 36
     Height = 26
     Hint = #1061#1086#1076' '#1074#1087#1077#1088#1077#1076
+    Anchors = [akTop, akRight]
     Caption = '>>'
     Enabled = False
     OnClick = UndoBtnClick
+    ExplicitLeft = 636
   end
   object Panel1: TPanel
     Left = -1
     Top = 0
-    Width = 512
-    Height = 512
+    Width = 544
+    Height = 544
+    Anchors = [akLeft, akTop, akRight, akBottom]
     BevelOuter = bvLowered
     TabOrder = 0
     object PBox: TImage
       Left = 1
       Top = 1
-      Width = 510
-      Height = 510
+      Width = 542
+      Height = 542
       Align = alClient
       OnMouseDown = PBoxMouseDown
-      ExplicitLeft = 176
-      ExplicitTop = 160
-      ExplicitWidth = 233
-      ExplicitHeight = 177
+      ExplicitTop = 2
+      ExplicitWidth = 557
+      ExplicitHeight = 550
     end
   end
   object Status: TStatusBar
     Left = 0
-    Top = 511
-    Width = 677
+    Top = 548
+    Width = 710
     Height = 23
     Panels = <
       item
@@ -177,10 +205,11 @@ object MainForm: TMainForm
       end>
   end
   object Memo: TMemo
-    Left = 518
+    Left = 550
     Top = 116
     Width = 153
     Height = 216
+    Anchors = [akTop, akRight]
     Font.Charset = RUSSIAN_CHARSET
     Font.Color = clWindowText
     Font.Height = -11
@@ -192,11 +221,12 @@ object MainForm: TMainForm
     TabOrder = 2
   end
   object selLevel: TComboBox
-    Left = 518
-    Top = 447
+    Left = 551
+    Top = 448
     Width = 151
     Height = 21
     Style = csDropDownList
+    Anchors = [akTop, akRight]
     ItemIndex = 2
     TabOrder = 3
     Text = #1059#1089#1080#1083#1077#1085#1085#1099#1081
@@ -208,28 +238,43 @@ object MainForm: TMainForm
       #1052#1072#1082#1089#1080#1084#1072#1083#1100#1085#1099#1081)
   end
   object LibEnableBtn: TCheckBox
-    Left = 519
+    Left = 551
     Top = 474
     Width = 153
     Height = 17
-    Hint = #1079#1072#1076#1077#1081#1089#1090#1074#1086#1074#1072#1090#1100' '#1073#1080#1073#1083#1080#1086#1090#1077#1082#1091' '#1076#1077#1073#1102#1090#1086#1074
-    Caption = #1080#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1073#1080#1073#1083#1080#1086#1090#1077#1082#1091
+    Hint = #1047#1072#1076#1077#1081#1089#1090#1074#1086#1074#1072#1090#1100' '#1073#1080#1073#1083#1080#1086#1090#1077#1082#1091' '#1076#1077#1073#1102#1090#1086#1074
+    Anchors = [akTop, akRight]
+    Caption = #1073#1080#1073#1083#1080#1086#1090#1077#1082#1072' '#1076#1077#1073#1102#1090#1086#1074
     Checked = True
     State = cbChecked
     TabOrder = 4
-    OnClick = LibEnableBtnClick
+    OnClick = UpdateOptions
   end
-  object selfLearn: TCheckBox
-    Left = 519
-    Top = 490
+  object useDbBtn: TCheckBox
+    Left = 551
+    Top = 492
     Width = 153
     Height = 17
-    Hint = #1080#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1086#1094#1077#1085#1082#1080' '#1087#1086#1079#1080#1094#1080#1081', '#1087#1086#1083#1091#1095#1077#1085#1085#1099#1077' '#1074' '#1087#1088#1077#1076#1099#1076#1091#1097#1080#1093' '#1080#1075#1088#1072#1093
-    Caption = #1089#1072#1084#1086#1086#1073#1091#1095#1077#1085#1080#1077
+    Hint = #1048#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1086#1094#1077#1085#1082#1080' '#1087#1086#1079#1080#1094#1080#1081', '#1087#1086#1083#1091#1095#1077#1085#1085#1099#1077' '#1074' '#1087#1088#1077#1076#1099#1076#1091#1097#1080#1093' '#1080#1075#1088#1072#1093
+    Anchors = [akTop, akRight]
+    Caption = #1073#1072#1079#1072' '#1086#1094#1077#1085#1086#1082
     Checked = True
     State = cbChecked
     TabOrder = 5
-    OnClick = selfLearnClick
+    OnClick = UpdateOptions
+  end
+  object selfLearnBtn: TCheckBox
+    Left = 551
+    Top = 510
+    Width = 153
+    Height = 17
+    Hint = #1055#1086#1087#1086#1083#1085#1103#1090#1100' '#1073#1072#1079#1091' '#1086#1094#1077#1085#1086#1082' '#1076#1083#1103#1082' '#1073#1091#1076#1091#1097#1080#1093' '#1080#1075#1088
+    Anchors = [akTop, akRight]
+    Caption = #1089#1072#1084#1086#1086#1073#1091#1095#1077#1085#1080#1077
+    Checked = True
+    State = cbChecked
+    TabOrder = 6
+    OnClick = UpdateOptions
   end
   object Pieces: TImageList
     Height = 60
@@ -7689,10 +7734,12 @@ object MainForm: TMainForm
     Top = 424
     object MenuSaveGame: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1080#1075#1088#1091'...'
+      ShortCut = 113
       OnClick = MenuSaveGameClick
     end
     object MenuLoadGame: TMenuItem
       Caption = #1047#1072#1075#1088#1091#1079#1080#1090#1100' '#1080#1075#1088#1091'...'
+      ShortCut = 114
       OnClick = MenuLoadGameClick
     end
     object N4: TMenuItem

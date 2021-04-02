@@ -2,26 +2,33 @@
 unit AI;
 interface
  var
-  useLibrary:boolean=false;
+  useLibrary:boolean=false; // разрешение использовать библиотеку дебютов
   turnTimeLimit:integer = 5; // turn time limit in seconds
-  aiLevel:integer; // уровень сложности (1..5) - определяет момент, когда AI принимает решение о готовности хода
+  aiLevel:integer; // уровень сложности (1..4) - определяет момент, когда AI принимает решение о готовности хода
   aiSelfLearn:boolean=true; // режим самообучения: пополняет базу оценок позиций в ходе игры
+  aiUseDB:boolean=true; // можно ли использовать БД оценок позиций
 
-  aiStatus:string; // состояние работы AI
+  aiStatus:string; // строка состояния работы AI
   moveReady:integer; // готовность хода - индекс выбранной доски продолжения (<=0 - ход не готов). Когда выставляется - AI ставится на паузу
 
+ // Все эти процедуры вызываются только из главного потока
  procedure StartAI;
  procedure PauseAI;
  procedure ResumeAI;
  procedure StopAI;
  procedure AiTimer; // необходимо вызывать регулярно не менее 20 раз в секунду. Переключает режим работы AI
 
- function IsAIrunning:boolean;
- procedure EstimatePosition(boardIdx:integer;quality:byte;noCache:boolean=false);
+ function IsAiStarted:boolean;
+ function IsAiRunning:boolean;
+
+ // Функция оценки позиции. Вычисленная оценка сохраняется в самой позиции, там же обновляются флаги.
+ // Вместо вычисления, оценка может быть взята из базы оценок (вычисленных в других играх и сохранённых),
+ // либо из кэша оценок (если такая позиция уже встречалась в текущей сессии, отключаемо).
+ procedure EstimatePosition(boardIdx:integer;simplifiedMode:boolean;noCache:boolean=false);
 
 
 implementation
- uses Apus.MyServis,SysUtils,Classes,gamedata,logic;
+ uses Apus.MyServis,Windows,SysUtils,Classes,gamedata,logic;
 
  const
   // штраф за незащищенную фигуру под боем
@@ -29,22 +36,61 @@ implementation
   bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 1000);
 
  type
-  TThinkThread=class(TThread)
-   status:string;
-   useLibrary,advSearch,selfTeach,running:boolean;
-   level,plimit,d1,d2:byte;
-   procedure Reset;
-   procedure Execute; override;
-   function ThinkIteration(root:integer;iteration:byte):boolean;
-   procedure DoThink;
+  TBasket=record
+   first,last:integer;
+  end;
+  TBaskets=record
+   links:array of integer;
+   baskets:array[0..127] of TBasket; // weight должен быть в этих пределах
+   lock:NativeInt;
+   lastBasket:integer;
+   count:integer;
+   procedure Init;
+   procedure Clear;
+   procedure Add(b:integer); overload;
+   procedure Add(boards:PInteger;count:integer); overload;
+   function Get:integer;
+  private
+   procedure InternalAdd(idx:integer); inline;
   end;
 
+  TThinkThread=class(TThread)
+   id:integer;
+   threadRunning,idle:boolean;
+   counter,waitCounter:integer;
+   procedure Execute; override;
+{   procedure Reset;
+   function ThinkIteration(root:integer;iteration:byte):boolean;
+   procedure DoThink;}
+  end;
+
+  TAiState=(
+   aiNoWork,  // AI стартовали, работы нет
+   aiWorking, // задача поставлена, потоки могут работать (если не приостановлены)
+   aiStopped  // работа остановилась - необходимо вмешательство
+   );
+
  var
-  threads:array[0..15] of TThinkThread;
+  started,running:boolean;
+  state:TAiState; // состояние выставляется из главного потока (из таймера)
+  // рабочие потоки
+  threads:array of TThinkThread;
+  // список активных листьев
+  active:TBaskets;
+
+  // Для статистики
+  startTime:int64;
+  secondsElapsed:integer;
+  startEstCounter:integer;
+  lastEstCounter:integer;
+  lastStatTime:int64;
+
+  // глобальные счётчики производительности
+  estCounter:NativeInt;
 
 
  // оценка позиции (rate - за черных)
- procedure EstimatePosition(boardIdx:integer;quality:byte;noCache:boolean=false);
+ procedure EstimatePosition(boardIdx:integer;simplifiedMode:boolean;noCache:boolean=false);
   const
    PawnRate:array[0..7] of single=(1, 1, 1, 1.02, 1.1, 1.3, 1.9, 2);
   var
@@ -55,6 +101,8 @@ implementation
    h:integer;
    beatable:TBeatable;
    b:PBoard;
+   cachedRate:single;
+   cachedFromDB:boolean;
   begin
    inc(estCounter);
    b:=@data[boardIdx];
@@ -75,28 +123,18 @@ implementation
     j:=data[j].parent;
    end;
 
-   if not noCache then begin
-    inc(cacheUse);
-    hash:=BoardHash(b^);
-    h:=hash and CacheMask;
-    if cache[h].hash=hash then
-     with b^ do begin
-      // вычисление флага шаха
-      IsCheck(b^);
-      whiterate:=1;
-      blackrate:=1;
-      rate:=integer(cache[h].rate and $FFFFFF00)/(1000*256);
-      if cache[h].rate and 1>0 then flags:=flags or movDB;
-      if PlayerWhite then rate:=-rate;
+   // Оценка уже есть в кэше?
+   if not noCache then
+    if GetCachedRate(b^,hash) then begin
+      IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: убрать)
       exit;
      end;
-   end;
 
    with b^ do begin
     whiteRate:=-1000;
     blackRate:=-1000;
     flags:=flags and (not movCheck);
-    if quality=0 then begin
+    (*if quality=0 then begin
      for i:=0 to 7 do
       for j:=0 to 7 do
        case GetCell(i,j) of
@@ -104,7 +142,7 @@ implementation
         KingBlack:BlackRate:=BlackRate+1000;
        end;
      exit;
-    end;
+    end; *)
     CalcBeatable(b^,beatable);
     // Базовая оценка
     for i:=0 to 7 do
@@ -175,7 +213,7 @@ implementation
   {  if WhiteTurn then WhiteRate:=WhiteRate+0.1
      else BlackRate:=BlackRate+0.05;}
 
-    if quality>0 then begin
+    if not simplifiedMode then begin
      // 1-е расширение оценки - поля и фигуры под боем
      maxblack:=0; maxwhite:=0;
      for i:=0 to 7 do
@@ -231,17 +269,70 @@ implementation
     else
      rate:=(WhiteRate-BlackRate)*(1+1/(BlackRate+WhiteRate))+random(3)/2000;}
 
-    if not noCache then begin
-     cache[h].hash:=hash;
-     cache[h].rate:=round(rate*1000) shl 8;
-     inc(cacheMiss);
-    end;
+    // сохранить вычисленную оценку в кэше
+    if not noCache then
+     CacheBoardRate(hash,rate);
 
     if PlayerWhite then rate:=-rate;
    end;
   end;
 
+ // Определяет фазу игры: дебют..эндшпиль
+ // Фаза влияет на оценку позиции
+ procedure DetectGamePhase;
+  var
+   i,j:integer;
+   c:integer;
+  begin
+   c:=0;
+   with data[curBoardIdx] do
+    for i:=0 to 7 do begin
+     if not CellIsEmpty(i,0) then inc(c);
+     if not CellIsEmpty(i,7) then inc(c);
+     if GetCell(i,1)=PawnWhite then inc(c);
+     if GetCell(i,6)=PawnBlack then inc(c);
+    end;
+   if c>=18 then begin
+    gamestage:=1; exit; // дебют
+   end;
+   EstimatePosition(curBoardIdx,false,true);
+   with curBoard^ do
+    if (whiteRate<18) and (blackRate<18) then gameStage:=3
+     else gamestage:=2;
+  end;
 
+ function MakeTurnFromLibrary:boolean;
+  var
+   i,j,n,weight,board:integer;
+   turns:array[1..30] of integer;
+  begin
+    n:=0; weight:=0;
+    // Составим список вариантов ходов для текущей позиции
+    for i:=0 to high(turnLib) do
+     if (CompareMem(@curBoard.cells,@turnLib[i].field,sizeof(TField))) and
+        (curBoard.whiteTurn=turnLib[i].whiteTurn) then begin
+      inc(n);
+      turns[n]:=i;
+      inc(weight,turnlib[i].weight);
+     end;
+    if n>0 then begin
+     j:=random(weight);
+     weight:=0;
+     for i:=1 to n do begin
+      weight:=weight+turnlib[turns[i]].weight;
+      if weight>j then begin
+       board:=AddChild(curBoardIdx);
+       with turnlib[turns[i]] do
+        DoMove(data[board],turnFrom,turnTo);
+       moveReady:=board;
+       exit;
+      end;
+     end;
+    end;
+  end;
+
+
+(*
  // Построить полное дерево до заданной глубины
  // продолжать ходы со взятием и шахами, но не далее чем до maxdepth
  // корневой эл-т должен быть оценен!
@@ -448,29 +539,9 @@ implementation
     end;
    end; }
   end;
+  *)
 
- procedure GetGamePhase;
-  var
-   i,j:integer;
-   c:integer;
-  begin
-   c:=0;
-   with data[curBoardIdx] do
-    for i:=0 to 7 do begin
-     if not CellIsEmpty(i,0) then inc(c);
-     if not CellIsEmpty(i,7) then inc(c);
-     if GetCell(i,1)=PawnWhite then inc(c);
-     if GetCell(i,6)=PawnBlack then inc(c);
-    end;
-   if c>=18 then begin
-    gamestage:=1; exit; // дебют
-   end;
-   EstimatePosition(curBoardIdx,10,true);
-   with curBoard^ do
-    if (whiteRate<18) and (blackRate<18) then gameStage:=3
-     else gamestage:=2;
-  end;
-
+(*
  //
  function TThinkThread.ThinkIteration(root:integer;iteration:byte):boolean;
   var
@@ -513,36 +584,6 @@ implementation
      RateTree(root);
     end;
    end;
-  end;
-
- function MakeTurnFromLibrary:boolean;
-  var
-   i,j,n,weight,board:integer;
-   turns:array[1..30] of integer;
-  begin
-    n:=0; weight:=0;
-    // Составим список вариантов ходов для текущей позиции
-    for i:=0 to high(turnLib) do
-     if (CompareMem(@curBoard.cells,@turnLib[i].field,sizeof(TField))) and
-        (curBoard.whiteTurn=turnLib[i].whiteTurn) then begin
-      inc(n);
-      turns[n]:=i;
-      inc(weight,turnlib[i].weight);
-     end;
-    if n>0 then begin
-     j:=random(weight);
-     weight:=0;
-     for i:=1 to n do begin
-      weight:=weight+turnlib[turns[i]].weight;
-      if weight>j then begin
-       board:=AddChild(curBoardIdx);
-       with turnlib[turns[i]] do
-        DoMove(data[board],turnFrom,turnTo);
-       moveReady:=board;
-       exit;
-      end;
-     end;
-    end;
   end;
 
  // Найти ход
@@ -707,37 +748,350 @@ implementation
    gameState:=0;
    useLibrary:=true;
   end;
+  *)
+
+ // Добавляет дочерние узлы для всех возможных продолжений указанной позиции
+ procedure ExtendNode(node:integer);
+  var
+   i,j,k,color,newNode:integer;
+   moves:TMovesList;
+   toAdd:array[0..255] of integer;
+   toAddCnt:integer;
+  begin
+   with data[node] do begin
+    // не продолжать позиции, которые:
+    // - являются проигрышными для одной из сторон
+    // - являются патовой ситуацией из-за повторения позиций
+    // - с оценкой из базы при низком весе
+    if (flags and movGameOver>0) then exit;
+    if (flags and movDB>0) and (weight<12) then exit;
+
+    if WhiteTurn then color:=White else color:=Black;
+   end;
+
+   // продолжить дерево
+   toAddCnt:=0;
+   for i:=0 to 7 do
+    for j:=0 to 7 do begin
+      if data[node].GetPieceColor(i,j)<>color then continue;
+      GetAvailMoves(data[node],i+j shl 4,moves);
+      for k:=1 to moves[0] do begin
+       newNode:=AddChild(node);
+       if newNode=0 then exit; // закончилась память
+       DoMove(data[newNode],i+j shl 4,moves[k]);
+       EstimatePosition(newNode,false);
+       with data[newNode] do begin
+        if abs(rate)>200 then begin // недопустимый ход?
+         DeleteNode(newNode,true);
+         continue;
+        end;
+        /// TODO: сюда вставить пролонгацию оценки на предков
+
+        // скорректируем вес
+        if flags and movBeat>0 then weight:=weight+4
+        else
+        if flags and movCheck>0 then weight:=weight+7;
+
+        if weight<=0 then continue; // позиция не заслуживает продолжения
+       end;
+       toAdd[toAddCnt]:=newNode;
+       inc(toAddCnt);
+      end;
+    end;
+   if toAddCnt>0 then active.Add(@toAdd,toAddCnt);
+  end;
+
+ // Поток занимается исключительно развитием дерева поиска:
+ // - достаёт из кучи позицию с наибольшим весом
+ // - строит все возможные варианты продолжения и оценивает полученные позиции; обновляет оценки предков в дереве
+ // - заносит в кучу полученные позиции, если они нуждаются в продолжении
+ procedure TThinkThread.Execute;
+  var
+   node:integer;
+  begin
+   counter:=0;
+   waitCounter:=0;
+   threadRunning:=true;
+   try
+   repeat
+    if not running then begin // no work to do
+     idle:=true;
+     Sleep(1); continue;
+    end;
+    idle:=false;
+
+    node:=active.Get;
+    if node=0 then begin // список пуст - работы нет
+     inc(waitCounter);
+     Sleep(1);
+     continue;
+    end;
+    ExtendNode(node);
+    inc(counter);
+
+   until terminated;
+   except
+    on e:Exception do ErrorMessage('Error: '+ExceptionMsg(e));
+   end;
+   threadRunning:=false;
+  end;
+
+ // Рекурсивный обход дерева: находим листья, вычисляем их веса и заносим в список активных
+ procedure ProcessTree(node,baseWeight:integer;baseRate:single);
+  var
+   w:integer;
+  begin
+   if data[node].firstChild>0 then begin
+    // есть потомки
+    node:=data[node].firstChild;
+    while node>0 do begin
+     ProcessTree(node,baseWeight-8,baseRate);
+     node:=data[node].nextSibling;
+    end;
+   end else begin
+    // узел - лист: вычислить вес и добавить в список активных
+    with data[node] do begin
+     if flags and movGameOver>0 then exit; // конец игры, нельзя продолжить
+     w:=baseWeight;//+round(rate-baseRate); // если у позиции высокая оценка - она продолжается в первую очередь
+     if w>0 then begin
+      weight:=w;
+      active.Add(node);
+     end;
+    end;
+   end;
+  end;
+
+ // Начать работу после выполнения хода
+ procedure StartThinking;
+  var
+   w:integer;
+   time:int64;
+  begin
+   PauseAI;
+   time:=MyTickCount;
+   startTime:=time;
+   secondsElapsed:=-1;
+   startEstCounter:=estCounter;
+   DetectGamePhase;
+
+   // Нужно пройти по дереву поиска и занести все листья, которые нуждаются в продолжении, в список активных
+   active.Clear;
+   case aiLevel of
+    1:w:=22;
+    2:w:=30;
+    3:w:=34;
+    4:w:=42;
+   end;
+
+   ProcessTree(curBoardIdx,w,curBoard.rate);
+
+   time:=MyTickCount-time;
+   ResumeAI;
+   state:=aiWorking;
+   LogMessage('StartThinking time = %d',[time]);
+  end;
+
+ procedure UpdateStats;
+  var
+   i:integer;
+   time:int64;
+  begin
+
+   // Статистика
+   time:=MyTickCount;
+   i:=round((time-startTime)/1000);
+   if i<>secondsElapsed then begin
+    secondsElapsed:=i;
+    aiStatus:=Format('Прошло: %d c, позиций: %s, оценок: %s',
+     [secondsElapsed,FormatInt(memSize-freeCnt),FormatInt(estCounter-startEstCounter)]);
+    // Кол-во оценок в секунду:
+
+    if lastStatTime>0 then begin
+     i:=1000*(estCounter-lastEstCounter) div (time-lastStatTime);
+     if i>0 then LogMessage('Rate: %d positions/sec',[i]);
+    end;
+    lastEstCounter:=estCounter;
+    lastStatTime:=time;
+   end;
+  end;
 
  procedure AiTimer;
   begin
-
+   if not started or not running then exit;
+   try
+    case state of
+     aiNoWork:StartThinking;
+     aiWorking:UpdateStats;
+    end;
+   except
+    on e:Exception do LogMessage('Error in timer: '+ExceptionMsg(e));
+   end;
   end;
 
+ // Инициализация AI
  procedure StartAI;
+  var
+   i,n:integer;
+   sysInfo:TSystemInfo;
   begin
+   if started then exit;
+   // Создать потоки
+   GetSystemInfo(sysInfo);
+   n:=sysInfo.dwNumberOfProcessors;
+   if n>=4 then dec(n);
+   if n>=6 then dec(n);
+   {$IFDEF SINGLETHREADED}
+   n:=1;
+   {$ENDIF}
+   SetLength(threads,n);
+   for i:=0 to high(threads) do begin
+    threads[i]:=TThinkThread.Create;
+    threads[i].id:=i;
+   end;
 
+   active.Init;
+   LogMessage('AI started');
+
+   state:=aiNoWork;
+   started:=true;
    ResumeAI;
-  end;
-
- procedure PauseAI;
-  begin
-
+   LogMessage('AI running');
   end;
 
  procedure ResumeAI;
+  var
+   i:integer;
   begin
+   if not started then begin
+    LogMessage('Can''t resume: not started');
+    exit;
+   end;
+   if running then exit;
+   running:=true;
+  end;
 
+ procedure PauseAI;
+  var
+   i:integer;
+   wait:boolean;
+  begin
+   if not started or not running then exit;
+   running:=false;
+   // Подождать пока все потоки реально остановятся
+   repeat
+    wait:=false;
+    for i:=0 to high(threads) do
+     if not threads[i].idle then wait:=true;
+    if wait then
+     sleep(0)
+    else
+     break;
+   until false;
+   Sleep(0);
   end;
 
  procedure StopAI;
+  var
+   i:integer;
   begin
+   if not started then exit;
    PauseAI;
+   LogMessage('AI paused');
 
+   for i:=0 to high(threads) do begin
+    threads[i].Terminate;
+    FreeAndNil(threads[i]);
+   end;
+   started:=false;
+   LogMessage('AI stopped');
   end;
 
  function IsAIrunning:boolean;
   begin
-   result:=false;
+   result:=running;
   end;
+
+ function IsAiStarted:boolean;
+  begin
+   result:=started;
+  end;
+
+{ TBaskets }
+
+procedure TBaskets.Init;
+ var
+  i:integer;
+ begin
+  lock:=0;
+  SetLength(links,memSize);
+  Clear;
+ end;
+
+procedure TBaskets.Add(boards:PInteger; count:integer);
+ begin
+  SpinLock(lock);
+  while count>0 do begin
+   InternalAdd(boards^);
+   dec(count);
+   inc(boards);
+  end;
+  Unlock(lock);
+ end;
+
+procedure TBaskets.Clear;
+ begin
+  SpinLock(lock);
+  ZeroMem(baskets,sizeof(baskets));
+  count:=0;
+  lastBasket:=0;
+  Unlock(lock);
+ end;
+
+procedure TBaskets.Add(b: integer);
+ begin
+  SpinLock(lock);
+  InternalAdd(b);
+  Unlock(lock);
+ end;
+
+procedure TBaskets.InternalAdd(idx:integer);
+ var
+  weight:byte;
+ begin
+  weight:=data[idx].weight;
+  ASSERT(weight>0);
+  with baskets[weight] do begin
+   if last>0 then links[last]:=idx;
+   last:=idx;
+   if first=0 then first:=idx;
+  end;
+  if weight>lastBasket then
+   lastBasket:=weight;
+  inc(count);
+ end;
+
+function TBaskets.Get:integer;
+ var
+  w:byte;
+ begin
+  SpinLock(lock);
+  if lastBasket=0 then begin
+   Unlock(lock);
+   exit(0);
+  end;
+  with baskets[lastBasket] do begin
+   result:=first;
+   dec(self.count);
+   if first=last then begin
+    first:=0; last:=0;
+    // корзина пуста - перейти к следующей
+    repeat
+     dec(lastBasket);
+    until (lastBasket=0) or (baskets[lastBasket].first>0);
+   end else
+    first:=links[result];
+  end;
+  Unlock(lock);
+ end;
 
 end.

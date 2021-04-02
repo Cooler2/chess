@@ -1,7 +1,7 @@
 object TreeWnd: TTreeWnd
   Left = 0
   Top = 0
-  Width = 484
+  Width = 592
   Height = 727
   VertScrollBar.Size = 50
   AutoScroll = True
@@ -14,6 +14,7 @@ object TreeWnd: TTreeWnd
   Font.Style = []
   OldCreateOrder = False
   OnClose = FormClose
+  OnKeyDown = FormKeyDown
   OnMouseDown = FormMouseDown
   OnPaint = FormPaint
   OnResize = FormResize

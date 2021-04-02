@@ -1,4 +1,7 @@
-﻿// Главное окно игры, интерфейс
+﻿{$IFDEF CPU386}
+{$SETPEFLAGS $20} // Allow 3GB memory space for 32-bit process
+{$ENDIF}
+// Главное окно игры, интерфейс
 {$R+}
 unit main;
 interface
@@ -10,6 +13,7 @@ uses
 
 const
  moveFileName='chessmove.txt';
+ CELL_SIZE = 64; // размер клетки поля
 
 type
   TMainForm = class(TForm)
@@ -43,9 +47,9 @@ type
     OpenD: TOpenDialog;
     SaveD: TSaveDialog;
     LibEnableBtn: TCheckBox;
-    selfLearn: TCheckBox;
+    useDbBtn: TCheckBox;
+    selfLearnBtn: TCheckBox;
     procedure DrawBoard(Sender: TObject);
-    procedure FormActivate(Sender: TObject);
     procedure PBoxMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure SwapBtnClick(Sender: TObject);
@@ -63,16 +67,17 @@ type
     procedure MenuSaveTurn3Click(Sender: TObject);
     procedure MenuDeleteTurnClick(Sender: TObject);
     procedure TimerTimer(Sender: TObject);
-    procedure Estimate;
+    procedure Estimate(showExtraStatus:boolean=false);
     procedure ShowTreeBtnClick(Sender: TObject);
-    procedure LibEnableBtnClick(Sender: TObject);
     procedure ClearBtnClick(Sender: TObject);
     procedure MenuSaveAllTurnsClick(Sender: TObject);
     procedure MenuSaveGameClick(Sender: TObject);
     procedure MenuLoadGameClick(Sender: TObject);
     procedure selLevelChange(Sender: TObject);
     procedure limitboxChange(Sender: TObject);
-    procedure selfLearnClick(Sender: TObject);
+    procedure UpdateOptions(Sender: TObject);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure FormCreate(Sender: TObject);
   private
     { Private declarations }
   public
@@ -97,25 +102,41 @@ implementation
   turnFrom,turnTo:integer;
   BlackFieldColor,WhiteFieldColor:cardinal;
 
-procedure TMainForm.FormActivate(Sender: TObject);
-type
- TMyRec=record
- end;
-var
- myRec:TMyRec;
+procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
- MyRec:=Default(TMyRec);
+ if IsAiStarted then StopAI;
+end;
+
+procedure TMainForm.FormCreate(Sender: TObject);
+begin
  UseLogFile('chess.log');
  curPiecePos:=255;
  animation:=0;
  InitNewGame;
  displayBoard:=curBoardIdx;
  DrawBoard(sender);
+ LoadLibrary;
+ LoadRates;
 end;
 
-procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
+procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+ procedure MyStopAI;
+  begin
+   if startBtn.Down then begin
+    startBtn.down:=false;
+    startBtn.Click;
+   end;
+  end;
 begin
- if IsAIrunning then StopAI;
+ if key=VK_F2 then begin
+  MyStopAI;
+  MenuSaveGame.Click;
+ end;
+ if key=VK_F3 then begin
+  MyStopAI;
+  MenuLoadGame.Click;
+ end;
 end;
 
 procedure TMainForm.LibBtnMouseDown(Sender: TObject; Button: TMouseButton;
@@ -125,11 +146,6 @@ var
 begin
  p:=MenuBtn.ClientToScreen(point(x,y));
  menu1.Popup(p.x,p.y);
-end;
-
-procedure TMainForm.LibEnableBtnClick(Sender: TObject);
-begin
- useLibrary:=LibEnableBtn.checked;
 end;
 
 procedure TMainForm.limitboxChange(Sender: TObject);
@@ -182,19 +198,19 @@ begin
   closeFile(f);
   DeleteFile(moveFileName);
   if PlayerWhite then begin
-   x:=40+60*(TurnFrom and $F);
-   y:=40+60*(7-TurnFrom shr 4);
+   x:=40+CELL_SIZE*(TurnFrom and $F);
+   y:=40+CELL_SIZE*(7-TurnFrom shr 4);
   end else begin
-   x:=40+60*(7-TurnFrom and $F);
-   y:=40+60*(TurnFrom shr 4);
+   x:=40+CELL_SIZE*(7-TurnFrom and $F);
+   y:=40+CELL_SIZE*(TurnFrom shr 4);
   end;
   PBoxMouseDown(mainForm,mbLeft,[],x,y);
   if PlayerWhite then begin
-   x:=40+60*(TurnTo and $F);
-   y:=40+60*(7-TurnTo shr 4);
+   x:=40+CELL_SIZE*(TurnTo and $F);
+   y:=40+CELL_SIZE*(7-TurnTo shr 4);
   end else begin
-   x:=40+60*(7-TurnTo and $F);
-   y:=40+60*(TurnTo shr 4);
+   x:=40+CELL_SIZE*(7-TurnTo and $F);
+   y:=40+CELL_SIZE*(TurnTo shr 4);
   end;
   PBoxMouseDown(MainForm,mbLeft,[],x,y);
  except
@@ -307,9 +323,10 @@ var
  beatable:TBeatable;
 begin
  try
+ if treeWnd.Visible then exit;
  if animation>0 then exit;
- i:=(x-15) div 60;
- j:=(y-15) div 60;
+ i:=(x-15) div CELL_SIZE;
+ j:=(y-15) div CELL_SIZE;
  if playerWhite then j:=7-j else i:=7-i;
  if not ((i in [0..7]) and (j in [0..7])) then exit; // клик вне поля
 
@@ -412,14 +429,16 @@ begin
  DrawBoard(sender);
 end;
 
-procedure TMainForm.SelfLearnClick(Sender: TObject);
+procedure TMainForm.UpdateOptions(Sender: TObject);
 begin
- aiSelfLearn:=selfLearn.Checked;
+ useLibrary:=LibEnableBtn.checked;
+ aiUseDB:=useDbBtn.Checked;
+ aiSelfLearn:=selfLearnBtn.Checked;
 end;
 
 procedure TMainForm.selLevelChange(Sender: TObject);
 begin
- aiLevel:=selLevel.Itemindex;
+ aiLevel:=selLevel.Itemindex+1;
 end;
 
 procedure TMainForm.UndoBtnClick(Sender: TObject);
@@ -453,12 +472,13 @@ end;
 
 procedure TMainForm.ShowTreeBtnClick(Sender: TObject);
 begin
- TreeWnd.ShowModal;
+ TreeWnd.Show;
 end;
 
 procedure TMainForm.StartBtnClick(Sender: TObject);
 begin
  if StartBtn.down then begin // кнопку нажали
+  SelLevelChange(sender); // обновить сложность
   startBtn.Caption:='Stop AI';
   swapBtn.Enabled:=false;
   resetBtn.enabled:=false;
@@ -518,7 +538,8 @@ begin
  end;}
 
  if StartBtn.Down then begin
-  status.Panels[1].Text:=AiStatus;
+  if IsAiRunning then
+   status.Panels[1].Text:=AiStatus;
   if (gameState in [1..3]) then begin // остановка AI если игра окончена
    StartBtn.Down:=false;
    StartBtn.Click;
@@ -591,16 +612,17 @@ end;
 
 procedure TMainForm.DrawBoard(Sender: TObject);
 var
- i,j,k,v:integer;
+ i,j,k,v,w:integer;
  c:cardinal;
  x1,y1,x2,y2:integer;
 begin
  try
  with PBox.Canvas do begin
   brush.Color:=$B0CADA;
-  FillRect(rect(0,0,510,510));
+  w:=8*CELL_SIZE+30;
+  FillRect(rect(0,0,w,w));
   pen.color:=$202020;
-  Rectangle(14,14,496,496);
+  Rectangle(14,14,w-14,w-14);
   // Доска
   for i:=0 to 7 do
    for j:=0 to 7 do begin
@@ -608,7 +630,7 @@ begin
      brush.color:=BlackFieldColor
     else
      brush.color:=WhiteFieldColor;
-    fillRect(rect(15+i*60,15+j*60,75+i*60,75+j*60));
+    fillRect(rect(15+i*CELL_SIZE,15+j*CELL_SIZE,15+(i+1)*CELL_SIZE,15+(j+1)*CELL_SIZE));
     c:=0;
     k:=j; v:=i;
     if playerWhite then k:=7-k else v:=7-i;
@@ -619,7 +641,7 @@ begin
     for k:=0 to 2 do begin
      pen.color:=c;
      c:=c-$101010;
-     Rectangle(15+i*60+k,15+j*60+k,75+i*60-k,75+j*60-k);
+     Rectangle(15+i*CELL_SIZE+k,15+j*CELL_SIZE+k,15+(i+1)*CELL_SIZE-k,15+(j+1)*CELL_SIZE-k);
     end;
    end;
   // Подписи клеток
@@ -628,17 +650,17 @@ begin
   brush.style:=bsClear;
   if playerWhite then
    for i:=1 to 8 do begin
-    TextOut(3,518-i*60,inttostr(i));
-    TextOut(499,518-i*60,inttostr(i));
-    TextOut(i*60-18,-2,chr(96+i));
-    TextOut(i*60-18,494,chr(96+i));
+    TextOut(3,w+8-i*CELL_SIZE,inttostr(i));
+    TextOut(w-11,w+8-i*CELL_SIZE,inttostr(i));
+    TextOut(i*CELL_SIZE-18,-2,chr(96+i));
+    TextOut(i*CELL_SIZE-18,w-16,chr(96+i));
    end
   else
    for i:=1 to 8 do begin
-    TextOut(3,518-i*60,inttostr(9-i));
-    TextOut(499,518-i*60,inttostr(9-i));
-    TextOut(i*60-18,-2,chr(96-i+9));
-    TextOut(i*60-18,494,chr(96-i+9));
+    TextOut(3,518-i*CELL_SIZE,inttostr(9-i));
+    TextOut(499,518-i*CELL_SIZE,inttostr(9-i));
+    TextOut(i*CELL_SIZE-18,-2,chr(96-i+9));
+    TextOut(i*CELL_SIZE-18,494,chr(96-i+9));
    end;
 
   // Фигуры
@@ -649,7 +671,8 @@ begin
      if playerWhite then j:=7-j else v:=7-v;
      if CellOccupied(v,k) then begin
       if (animation>0) and (v=lastTurnTo and $F) and (k=lastTurnTo shr 4) then continue;
-      Pieces.Draw(PBox.canvas,15+i*60,15+j*60,GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
+      Pieces.Draw(PBox.canvas, 15+round((i+0.5)*CELL_SIZE)-30, 15+round((j+0.5)*CELL_SIZE)-30,
+        GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
      end;
     end;
 
@@ -667,8 +690,8 @@ begin
     end else begin
      x1:=7-x1; x2:=7-x2;
     end;
-    i:=15+round(60*(x1+(animation/9)*(x2-x1)));
-    j:=15+round(60*(y1+(animation/9)*(y2-y1)));
+    i:=15+round(CELL_SIZE*(0.5+x1+(animation/9)*(x2-x1)))-30;
+    j:=15+round(CELL_SIZE*(0.5+y1+(animation/9)*(y2-y1)))-30;
     Pieces.Draw(PBox.canvas,i,j,GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
    end;
  end;
@@ -684,10 +707,16 @@ var
  fl:boolean;
  v1,v2,i,j:integer;
 begin
- EstimatePosition(curBoardIdx,10,true);
- r:=-curBoard.rate;
- status.Panels[0].text:=Format('%5.3f : %5.3f = %4.3f',[curBoard.whiteRate,curBoard.blackRate,r]);
+ EstimatePosition(displayBoard,false,true);
+ with data[displayBoard] do begin
+  r:=-rate; // в базе оценка за соперника, показываем противоположную
+  status.Panels[0].text:=Format('%5.3f : %5.3f = %4.3f',[whiteRate,blackRate,r]);
 
+  if showExtraStatus then
+   status.Panels[1].text:=Format('w=%d flags=%x rF=%x depth=%d',[weight,flags,rFlags,depth]);
+ end;
+
+ if displayBoard<>curBoardIdx then exit;
  if curBoard.flags and movRepeat>0 then begin
   gameState:=1;
   ShowMessage('Повторение ходов!','Конец игры');

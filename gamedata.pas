@@ -48,13 +48,19 @@ const
 
  // Максимальное количество элементов в массиве данных
  {$IFDEF CPUx64}
- memsize = 5000000;
+ memSize = 12000000;
  {$ELSE}
- memsize = 2500000;
+ memSize =  8000000;
  {$ENDIF}
 
- cacheSize=$400000;
+ // Размер кэша оценок
+ {$IFDEF CPUx64}
+ cacheSize=$800000; //  8M элементов - 96M памяти
+ cacheMask=$7FFFFF;
+ {$ELSE}
+ cacheSize=$400000; //  4M элементов - 48M памяти
  cacheMask=$3FFFFF;
+ {$ENDIF}
 
 type
  {$IFDEF COMPACT}
@@ -71,8 +77,8 @@ type
   whiteTurn:boolean; // чей сейчас ход
   padding:word;
   // --- поля выше этой строки являются состоянием позиции: участвуют в сравнении и вычислении хэша
-  weight:single;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист
-  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева
+  weight:shortint;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист (1..199)
+  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   depth:byte;
   whiteRate,blackRate,rate:single; // оценки позиции
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
@@ -94,7 +100,7 @@ type
  // Сохранённая оценка позиции
  TCacheItem=record
   hash:int64;
-  rate:integer;
+  rate:integer; // младший байт содержит флаги
  end;
 
  // Сохранённый ход
@@ -114,11 +120,11 @@ type
 
 var
  // Память: здесь хранится всё дерево поиска и история партии (ствол)
- data:array of TBoard;
+ data:array of TBoard; // [0] - служебный фейковый элемент, в дереве не используется
  freeList:array of integer; // список свободных эл-тов
- freeCnt:integer; // кол-во свободных элементов в списке
- dataLocker:NativeInt; // блокировка дерева
- totalLeafCount:integer; // общее количество листьев в дереве поиска
+ freeCnt:NativeInt; // кол-во свободных элементов в списке
+ dataLocker:NativeInt; // блокировка дерева (а также связанных с ним структур)
+ totalLeafCount:NativeInt; // общее количество листьев в дереве поиска
 
  // Текущее состояние игры
  gameState:byte; // 0 - игра, 1 - пат, 2 - мат белым, 3 - мат черным, 4 - пауза
@@ -135,15 +141,15 @@ var
  // база оценок
  dbItems:array of TCacheItem;
 
- // Очередь активных листьёв
- qu:array[1..memsize] of integer;
- qstart,qlast:integer;
-
- // кэш оценок позиций
+ // Кэш оценок позиций: чтобы заново не вычислять оценку позиций, которые уже встречались ранее,
+ // т.к. к одной и той же позиции можно прийти по-разному либо на разных стадиях игры.
+ // Кэш влияет лишь на скорость оценочной функции, причём незначительно, но чем ближе к эндшпилю - тем сильнее.
+ // Однако несовершенство хэш-функции может приводить к ошибкам в оценке.
  cache:array[0..cachesize-1] of TCacheItem;
- cacheMiss,cacheUse:integer;
+ cacheMiss,cacheHit:integer;
 
- estCounter:integer;
+ // статистика
+ spinCounter:int64;
 
  // Search tree operations
  // ----
@@ -164,6 +170,9 @@ var
  // Вычисление хэша позиции
  function BoardHash(var b:TBoard):int64;
 
+ function GetCachedRate(var b:TBoard;out hash:int64):boolean;
+ procedure CacheBoardRate(hash:int64;rate:single);
+
  // Вспомогательные функции
  // ---
  function NameCell(x,y:integer):string; // формирует имя клетки, например 'b3'
@@ -171,6 +180,8 @@ var
  function FieldFromStr(st:string):TField;
  function IsPlayerTurn:boolean; // true - ход игрока, false - противника
 
+ procedure SpinLock(var lock:NativeInt); inline;
+ procedure Unlock(var lock:NativeInt); inline;
 
  // Библиотека: база "книжных" ходов
  // ---
@@ -229,7 +240,10 @@ implementation
 
  procedure SpinLock(var lock:NativeInt); inline;
   begin
-   while AtomicCmpExchange(lock,1,0)<>0 do YieldProcessor;
+   while AtomicCmpExchange(lock,1,0)<>0 do begin
+    inc(spinCounter);
+    YieldProcessor;
+   end;
    MemoryBarrier;
   end;
 
@@ -241,11 +255,11 @@ implementation
 
  function AllocBoard:integer;
   begin
-   ASSERT(freeCnt>0);
+   if freeCnt=0 then exit(0);
    dec(freeCnt);
    result:=freeList[freeCnt];
-   data[result].firstChild:=-1;
-   data[result].lastChild:=-1;
+   data[result].firstChild:=0;
+   data[result].lastChild:=0;
   end;
 
  procedure FreeBoard(index:integer); inline;
@@ -258,11 +272,16 @@ implementation
   begin
    SpinLock(dataLocker);
    result:=AllocBoard;
+   if result=0 then begin
+    Unlock(dataLocker);
+    exit;
+   end;
    with data[result] do begin
     parent:=_parent;
-    nextSibling:=-1; prevSibling:=-1;
+    nextSibling:=0; prevSibling:=0;
     cells:=data[_parent].cells;
     depth:=data[_parent].depth+1;
+    weight:=data[_parent].weight-10;
     rFlags:=data[_parent].rFlags;
     whiteTurn:=not data[_parent].whiteTurn;
     flags:=0;
@@ -326,11 +345,13 @@ implementation
   var
    i:integer;
   begin
+   LogMessage('Init New Game');
    // Init data storage
    SetLength(data,memSize);
    SetLength(freeList,memSize);
    freecnt:=0;
-   for i:=memsize-1 downto 0 do begin
+   // список свободных элементов. [0] - не используется
+   for i:=memsize-1 downto 1 do begin
     freeList[freecnt]:=i;
     inc(freecnt);
    end;
@@ -411,6 +432,36 @@ implementation
    pop ebx
    pop edi
    pop esi
+  end;
+
+ function GetCachedRate(var b:TBoard;out hash:int64):boolean;
+  var
+   h:integer;
+  begin
+   hash:=BoardHash(b);
+   h:=hash and CacheMask;
+   if cache[h].hash=hash then
+    with b do begin
+     inc(cacheHit);
+     whiterate:=1;
+     blackrate:=1;
+     rate:=integer(cache[h].rate and $FFFFFF00)/(1000*256); // точность оценки 0.001
+     if cache[h].rate and 1>0 then flags:=flags or movDB; // TODO: восстанавливать все необходимые флаги
+     if PlayerWhite then rate:=-rate;
+     result:=true;
+    end
+   else
+    result:=false;
+  end;
+
+ procedure CacheBoardRate(hash:int64;rate:single);
+  var
+   h:integer;
+  begin
+   h:=hash and CacheMask;
+   cache[h].hash:=hash;
+   cache[h].rate:=round(rate*1000) shl 8;
+   inc(cacheMiss);
   end;
 
  procedure LoadLibrary;
@@ -634,6 +685,7 @@ function FieldFromStr(st: string):TField;
     b.SetCell(p mod 8,p div 8,v);
     inc(p);
    end;
+   result:=b.cells;
   end;
 
  function GetPieceType(const f:TField;x,y:integer):integer; inline;
@@ -658,10 +710,10 @@ function FieldFromStr(st: string):TField;
     for x:=0 to 7 do begin
      piece:=GetPieceType(f,x,y);
      if piece>0 then
-      c:=Char(ord('a')+piece)
+      c:=Char(ord('a')+piece-1)
      else
       c:='.';
-     if GetPieceColor(f,x,y)>0 then c:=UpCase(c);
+     if GetPieceColor(f,x,y)=Black then c:=UpCase(c);
      result[1+x+y*8]:=c;
     end;
   end;
@@ -693,8 +745,21 @@ function FieldFromStr(st: string):TField;
   end;
 
  procedure TBoard.FromString(st: string);
+  var
+   i:integer;
+   sa:StringArr;
+   pair:TNameValue;
   begin
-
+   sa:=Split(';',st);
+   for i:=0 to high(sa) do begin
+    pair.Init(sa[i]);
+    if pair.Named('cells') then cells:=FieldFromStr(pair.value) else
+    if pair.Named('white') then whiteTurn:=pair.GetInt<>0 else
+    if pair.Named('from') then lastTurnFrom:=pair.GetInt else
+    if pair.Named('to') then lastTurnTo:=pair.GetInt else
+    if pair.Named('rF') then rFlags:=pair.GetInt else
+    if pair.Named('f') then flags:=pair.GetInt;
+   end;
   end;
 
 
