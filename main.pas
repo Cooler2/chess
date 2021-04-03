@@ -137,6 +137,8 @@ begin
   MyStopAI;
   MenuLoadGame.Click;
  end;
+ // Тест производительности (на базе текущей позиции)
+ if (key=VK_F4) and not startBtn.Down then AiPerfTest;
 end;
 
 procedure TMainForm.LibBtnMouseDown(Sender: TObject; Button: TMouseButton;

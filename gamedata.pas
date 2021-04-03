@@ -102,7 +102,10 @@ type
  // Сохранённая оценка позиции
  TCacheItem=record
   hash:int64;
-  rate:integer; // младший байт содержит флаги
+  rate:single; //
+  flags:byte; // флаги (рокировки) оцененноё позиции
+  quality:byte; // показатель качества оценки
+  extra:word; // дополнительное поле, например для обнаружения хэш-коллизий
  end;
 
  // Сохранённый ход
@@ -198,6 +201,7 @@ var
  // База оценок позиций
  procedure LoadRates;
  procedure SaveRates;
+ procedure UpdateCacheWithRates;
 
 implementation
  uses Apus.MyServis,SysUtils;
@@ -472,8 +476,8 @@ implementation
      inc(cacheHit);
      whiterate:=1;
      blackrate:=1;
-     rate:=integer(cache[h].rate and $FFFFFF00)/(1000*256); // точность оценки 0.001
-     if cache[h].rate and 1>0 then flags:=flags or movDB; // TODO: восстанавливать все необходимые флаги
+     rate:=cache[h].rate; // точность оценки 0.001
+     if cache[h].flags and 1>0 then flags:=flags or movDB; // TODO: восстанавливать все необходимые флаги
      if PlayerWhite then rate:=-rate;
      result:=true;
     end
@@ -623,25 +627,33 @@ implementation
     end;
   end;
 
+ // Оценки из базы хранятся в кэше вместе с другими кэшированными оценками
+ procedure UpdateCacheWithRates;
+  var
+   i,h:integer;
+  begin
+    for i:=0 to high(dbItems) do begin
+     h:=dbItems[i].hash and cacheMask;
+     cache[h]:=dbItems[i];
+     cache[h].flags:=cache[h].flags or movDB;
+    end;
+  end;
+
+ // Загрузка базы данных оценок
  procedure LoadRates;
   var
    f:file;
-   i,n,h:integer;
+   n:integer;
   begin
    if not fileExists(ratesFileName) then exit;
    try
     assign(f,ratesFileName);
     reset(f,1);
-    n:=filesize(f) div 12;
+    n:=filesize(f) div sizeof(TCacheItem);
     setLength(dbItems,n);
-    blockread(f,dbItems[0],n*12);
+    blockread(f,dbItems[0],n*sizeof(TCacheItem));
     close(f);
-    for i:=0 to n-1 do begin
-     h:=dbItems[i].hash and cacheMask;
-     cache[h]:=dbItems[i];
-     cache[h].rate:=cache[h].rate or 1;
-    end;
-
+    UpdateCacheWithRates;
    except
     on e:exception do ErrorMessage('Error in LoadDB: '+e.message);
    end;
@@ -654,7 +666,8 @@ implementation
    try
     assign(f,ratesFileName);
     rewrite(f,1);
-    blockwrite(f,dbItems[0],12*length(dbItems));
+    if length(dbItems)>0 then
+     blockwrite(f,dbItems[0],sizeof(TCacheItem)*length(dbItems));
     close(f);
    except
     on e:exception do ErrorMessage('Error in SaveDB: '+e.message);
