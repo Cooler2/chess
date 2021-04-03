@@ -18,6 +18,7 @@ interface
  procedure StopAI;
  procedure AiTimer; // необходимо вызывать регулярно не менее 20 раз в секунду. Переключает режим работы AI
  procedure PlayerMadeTurn; // сообщает AI о том, что игрок сделал ход (вызывается в приостановленном состоянии)
+ procedure AiPerfTest; // запустить тест производительности функций
 
  function IsAiStarted:boolean;
  function IsAiRunning:boolean;
@@ -108,6 +109,7 @@ implementation
    b:PBoard;
    cachedRate:single;
    cachedFromDB:boolean;
+   wRate,bRate:single;
   begin
    inc(estCounter);
    b:=@data[boardIdx];
@@ -136,8 +138,8 @@ implementation
      end;
 
    with b^ do begin
-    whiteRate:=-1000;
-    blackRate:=-1000;
+    wRate:=-1000;
+    bRate:=-1000;
     flags:=flags and (not movCheck);
     (*if quality=0 then begin
      for i:=0 to 7 do
@@ -153,50 +155,50 @@ implementation
     for i:=0 to 7 do
      for j:=0 to 7 do
       case GetCell(i,j) of
-       PawnWhite:WhiteRate:=WhiteRate+PawnRate[j];
-       PawnBlack:BlackRate:=BlackRate+PawnRate[7-j];
+       PawnWhite:WhiteRate:=wRate+PawnRate[j];
+       PawnBlack:BlackRate:=bRate+PawnRate[7-j];
 
-       RookWhite:WhiteRate:=WhiteRate+5;
-       RookBlack:BlackRate:=BlackRate+5;
-       QueenWhite:WhiteRate:=WhiteRate+9;
-       QueenBlack:BlackRate:=BlackRate+9;
-       BishopWhite:WhiteRate:=WhiteRate+3;
-       BishopBlack:BlackRate:=BlackRate+3;
-       KnightWhite:WhiteRate:=WhiteRate+3;
-       KnightBlack:BlackRate:=BlackRate+3;
+       RookWhite:wRate:=wRate+5;
+       RookBlack:bRate:=bRate+5;
+       QueenWhite:wRate:=wRate+9;
+       QueenBlack:bRate:=bRate+9;
+       BishopWhite:wRate:=wRate+3;
+       BishopBlack:bRate:=bRate+3;
+       KnightWhite:wRate:=wRate+3;
+       KnightBlack:bRate:=bRate+3;
        // если король под шахом и ход противника - игра проиграна
        KingWhite:begin
         // условие инвертировано
-        if WhiteTurn or (beatable[i,j] and Black=0) then WhiteRate:=WhiteRate+1005;
+        if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+1005;
         if beatable[i,j] and Black>0 then flags:=flags or movCheck;
        end;
        KingBlack:begin
-        if not WhiteTurn or (beatable[i,j] and White=0) then BlackRate:=BlackRate+1005;
+        if not WhiteTurn or (beatable[i,j] and White=0) then bRate:=bRate+1005;
         if beatable[i,j] and White>0 then flags:=flags or movCheck;
        end;
       end;
     // Бонус за рокировку
-    if rFlags and $8>0 then WhiteRate:=WhiteRate+0.8;
-    if rFlags and $80>0 then BlackRate:=BlackRate+0.8;
+    if rFlags and $8>0 then wRate:=wRate+0.8;
+    if rFlags and $80>0 then bRate:=bRate+0.8;
     // Штраф за невозможность рокировки
-    if (rFlags and $8=0) and (rflags and $4>0) then WhiteRate:=WhiteRate-0.3;
-    if (rFlags and $80=0) and (rflags and $40>0) then BlackRate:=BlackRate-0.3;
+    if (rFlags and $8=0) and (rflags and $4>0) then wRate:=wRate-0.3;
+    if (rFlags and $80=0) and (rflags and $40>0) then bRate:=bRate-0.3;
 
     if gamestage<3 then begin
      // Штраф за невыведенные фигуры
-     if GetCell(1,0)=KnightWhite then WhiteRate:=WhiteRate-0.2;
-     if GetCell(6,0)=KnightWhite then WhiteRate:=WhiteRate-0.2;
-     if GetCell(2,0)=BishopWhite then WhiteRate:=WhiteRate-0.2;
-     if GetCell(5,0)=BishopWhite then WhiteRate:=WhiteRate-0.2;
-     if GetCell(1,7)=KnightBlack then BlackRate:=BlackRate-0.2;
-     if GetCell(6,7)=KnightBlack then BlackRate:=BlackRate-0.2;
-     if GetCell(2,7)=BishopBlack then BlackRate:=BlackRate-0.2;
-     if GetCell(5,7)=BishopBlack then BlackRate:=BlackRate-0.2;
+     if GetCell(1,0)=KnightWhite then wRate:=wRate-0.2;
+     if GetCell(6,0)=KnightWhite then wRate:=wRate-0.2;
+     if GetCell(2,0)=BishopWhite then wRate:=wRate-0.2;
+     if GetCell(5,0)=BishopWhite then wRate:=wRate-0.2;
+     if GetCell(1,7)=KnightBlack then bRate:=bRate-0.2;
+     if GetCell(6,7)=KnightBlack then bRate:=bRate-0.2;
+     if GetCell(2,7)=BishopBlack then bRate:=bRate-0.2;
+     if GetCell(5,7)=BishopBlack then bRate:=bRate-0.2;
      // штраф за гуляющего короля
      for i:=0 to 7 do
       for j:=1 to 6 do begin
-       if GetCell(i,j)=KingWhite then WhiteRate:=WhiteRate-sqr(j)*0.05;
-       if GetCell(i,j)=KingBlack then BlackRate:=BlackRate-sqr(7-j)*0.05;
+       if GetCell(i,j)=KingWhite then wRate:=wRate-sqr(j)*0.05;
+       if GetCell(i,j)=KingBlack then bRate:=bRate-sqr(7-j)*0.05;
       end;
     end;
     // штраф за сдвоенные пешки и бонус за захват открытых линий
@@ -208,15 +210,15 @@ implementation
       if GetCell(i,j) in [RookWhite,QueenWhite] then f:=f or 1;
       if GetCell(i,j) in [RookBlack,QueenBlack] then f:=f or 2;
      end;
-     if n>1 then WhiteRate:=WhiteRate-0.1*n;
-     if m>1 then BlackRate:=BlackRate-0.1*m;
-     if (n=0) and (m=0) and (f and 1>0) then WhiteRate:=WhiteRate+0.1;
-     if (n=0) and (m=0) and (f and 2>0) then BlackRate:=BlackRate+0.1;
+     if n>1 then wRate:=wRate-0.1*n;
+     if m>1 then bRate:=bRate-0.1*m;
+     if (n=0) and (m=0) and (f and 1>0) then wRate:=wRate+0.1;
+     if (n=0) and (m=0) and (f and 2>0) then bRate:=bRate+0.1;
     end;
 
     // Надбавка за инициативу
-  {  if WhiteTurn then WhiteRate:=WhiteRate+0.1
-     else BlackRate:=BlackRate+0.05;}
+  {  if WhiteTurn then wRate:=wRate+0.1
+     else bRate:=bRate+0.05;}
 
     if not simplifiedMode then begin
      // 1-е расширение оценки - поля и фигуры под боем
@@ -226,8 +228,8 @@ implementation
        v:=0.08;
        if (i in [2..5]) and (j in [2..5]) then v:=0.09;
        if (i in [3..4]) and (j in [3..4]) then v:=0.11;
-       if beatable[i,j] and White>0 then WhiteRate:=WhiteRate+v;
-       if beatable[i,j] and Black>0 then BlackRate:=BlackRate+v;
+       if beatable[i,j] and White>0 then wRate:=wRate+v;
+       if beatable[i,j] and Black>0 then bRate:=bRate+v;
        // Незащищенная фигура под боем на ходу противника - минус фигуру!
        if (b.whiteTurn) and (beatable[i,j] and White>0) and (GetPieceColor(i,j)=Black) then begin
         if beatable[i,j] and Black>0 then v:=bweight[GetPieceType(i,j)]-bweight2[beatable[i,j] and 7]
@@ -240,39 +242,41 @@ implementation
         if maxWhite<v then maxWhite:=v;
        end;
       end;
-     whiteRate:=whiteRate-maxWhite;
-     blackRate:=blackRate-maxBlack;
+     wRate:=wRate-maxWhite;
+     bRate:=bRate-maxBlack;
     end;
 
-    if whiteRate<5.5 then begin // один король
+    if wRate<5.5 then begin // один король
      for i:=0 to 7 do
       for j:=0 to 7 do
        if GetCell(i,j)=KingWhite then begin
         x:=i; y:=j;
-        WhiteRate:=WhiteRate-0.2*(abs(i-3.5)+abs(j-3.5));
+        wRate:=wRate-0.2*(abs(i-3.5)+abs(j-3.5));
        end;
      for i:=0 to 7 do
       for j:=0 to 7 do
        if GetCell(i,j)=KingBlack then
-        BlackRate:=BlackRate-0.05*(abs(i-x)+abs(j-y));
+        bRate:=bRate-0.05*(abs(i-x)+abs(j-y));
     end;
-    if BlackRate<5.5 then begin // один король
+    if bRate<5.5 then begin // один король
      for i:=0 to 7 do
       for j:=0 to 7 do
        if GetCell(i,j)=KingBlack then begin
         x:=i; y:=j;
-        BlackRate:=BlackRate-0.2*(abs(i-3.5)+abs(j-3.5));
+        bRate:=bRate-0.2*(abs(i-3.5)+abs(j-3.5));
        end;
      for i:=0 to 7 do
       for j:=0 to 7 do
        if GetCell(i,j)=KingWhite then
-        WhiteRate:=WhiteRate-0.05*(abs(i-x)+abs(j-y));
+        wRate:=wRate-0.05*(abs(i-x)+abs(j-y));
     end;
 
-    rate:=(WhiteRate-BlackRate)*(1+10/(BlackRate+WhiteRate));
-  {   rate:=(BlackRate-WhiteRate)*(1+1/(BlackRate+WhiteRate))+random(3)/2000
+    whiteRate:=wRate;
+    blackRate:=bRate;
+    rate:=(wRate-bRate)*(1+10/(bRate+wRate));
+  {   rate:=(bRate-wRate)*(1+1/(bRate+wRate))+random(3)/2000
     else
-     rate:=(WhiteRate-BlackRate)*(1+1/(BlackRate+WhiteRate))+random(3)/2000;}
+     rate:=(wRate-bRate)*(1+1/(bRate+wRate))+random(3)/2000;}
 
     // сохранить вычисленную оценку в кэше
     if not noCache then
@@ -1064,5 +1068,17 @@ function TBaskets.Get:integer;
   end;
   Unlock(lock);
  end;
+
+ procedure AiPerfTest;
+  var
+   i:integer;
+   t1:single;
+  begin
+   StartMeasure(1);
+   for i:=1 to 300000 do
+    EstimatePosition(curBoardIdx,false,true);
+   t1:=EndMeasure(1);
+   ShowMessage(Format('EstimatePosition = %3.2f',[t1]),'Performance');
+  end;
 
 end.
