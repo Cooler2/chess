@@ -82,6 +82,7 @@ type
   flags:byte; // флаги последнего хода
   parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
+  children:integer; // общее кол-во дочерних нодов
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
   procedure Clear;

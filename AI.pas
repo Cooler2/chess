@@ -639,19 +639,23 @@ implementation
   end;
 
  // Проходит по дереву и вычисляет оценки у позиций, имеющих продолжение
- procedure RateSubtree(node:integer);
+ // вызывается только для позиций, имеющих продолжение
+ // Возвращает кол-во потомков у ноды
+ function RateSubtree(node:integer):integer;
   var
    i,d:integer;
    best,v:single;
    mode:boolean;
   begin
+   result:=1;
    mode:=data[node].whiteTurn xor playerWhite; // что вычислять: минимум или максимум
    d:=data[node].firstChild;
-   if data[d].firstChild>0 then RateSubtree(d);
+   if data[d].firstChild>0 then inc(result,RateSubtree(d));
    best:=data[d].rate;
    d:=data[d].nextSibling;
    while d>0 do begin
-    if data[d].firstChild>0 then RateSubtree(d);
+    if data[d].firstChild>0 then inc(result,RateSubtree(d))
+     else inc(result);
     v:=data[d].rate;
     if mode then begin
      if v>best then best:=v;
@@ -661,6 +665,7 @@ implementation
     d:=data[d].nextSibling;
    end;
    data[node].rate:=best;
+   data[node].children:=result;
   end;
 
  procedure RateTree;
@@ -668,7 +673,8 @@ implementation
    time:int64;
   begin
    time:=MyTickCount;
-   RateSubtree(curBoardIdx);
+   curBoard.children:=0;
+   if curBoard.firstChild>0 then RateSubtree(curBoardIdx);
    time:=MyTickCount-time;
   end;
 

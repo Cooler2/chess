@@ -114,6 +114,7 @@ procedure DrawTreeLines(canvas:TCanvas);
        canvas.moveto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[j]);
        canvas.lineto(25+d*COL_WIDTH-COL_WIDTH div 2+10,pos[j]);
       end;
+      canvas.Pen.Width:=1;
       // вертикальная линия
       canvas.moveto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[0]);
       canvas.lineto(25+d*COL_WIDTH-COL_WIDTH div 2,pos[j-1]);
@@ -147,12 +148,12 @@ procedure DrawTreeNodes(canvas:TCanvas);
     if d>0 then begin
      idx:=items[0];
      j:=0; // здесь будет решающий
-     if data[idx].whiteTurn xor playerWhite then val:=-10000 else val:=10000;
+     if data[idx].whiteTurn xor playerWhite then val:=10000 else val:=-10000;
      for i:=0 to high(items) do begin
       if data[idx].whiteTurn xor playerWhite then begin
-       if data[items[i]].rate>val then begin val:=data[items[i]].rate; j:=i; end;
-      end else begin
        if data[items[i]].rate<val then begin val:=data[items[i]].rate; j:=i; end;
+      end else begin
+       if data[items[i]].rate>val then begin val:=data[items[i]].rate; j:=i; end;
       end;
      end;
     end;
@@ -266,7 +267,7 @@ begin
     mainForm.displayBoard:=idx;
     if Button=mbRight then begin
      v:=items[i];
-     ShowMessage(inttostr(v)+' '+data[v].weight.ToString,'');
+     ShowMessage(Format('ID:%d, children=%d',[v,data[v].children]),'Node info');
     end;
     SetLength(treeData,col+2);
     BuildTree;
