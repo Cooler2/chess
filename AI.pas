@@ -155,8 +155,8 @@ implementation
     for i:=0 to 7 do
      for j:=0 to 7 do
       case GetCell(i,j) of
-       PawnWhite:WhiteRate:=wRate+PawnRate[j];
-       PawnBlack:BlackRate:=bRate+PawnRate[7-j];
+       PawnWhite:wRate:=wRate+PawnRate[j];
+       PawnBlack:bRate:=bRate+PawnRate[7-j];
 
        RookWhite:wRate:=wRate+5;
        RookBlack:bRate:=bRate+5;
@@ -1073,7 +1073,14 @@ function TBaskets.Get:integer;
   var
    i:integer;
    t1:single;
+   h:int64;
   begin
+{   StartMeasure(1);
+   for i:=1 to 3000000 do
+    h:=BoardHash(curBoard^);
+   t1:=EndMeasure(1);
+   ShowMessage(Format('BoardHash time = %3.2f, value=%s',[t1,IntToHex(h)]),'Performance');}
+
    StartMeasure(1);
    for i:=1 to 300000 do
     EstimatePosition(curBoardIdx,false,true);

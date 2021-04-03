@@ -138,7 +138,12 @@ begin
   MenuLoadGame.Click;
  end;
  // Тест производительности (на базе текущей позиции)
- if (key=VK_F4) and not startBtn.Down then AiPerfTest;
+ if (key=VK_F4) and not startBtn.Down then begin
+  Status.Panels[1].Text:='Тест производительности...';
+  application.ProcessMessages;
+  AiPerfTest;
+  Status.Panels[1].Text:='';
+ end;
 end;
 
 procedure TMainForm.LibBtnMouseDown(Sender: TObject; Button: TMouseButton;
@@ -379,7 +384,8 @@ begin
    // если не наш ход и компьютер думает - двигать нельзя
    if StartBtn.Down and (playerWhite xor curBoard.WhiteTurn) then exit;
    cell:=i+j shl 4;
-   if (curPiecePos=255) or (curBoard.GetPieceColor(i,j)=color) then begin
+   // если выбранная клетка содержит фигуру нашего цвета - выберем её
+   if (curBoard.CellOccupied(i,j) and (curBoard.GetPieceColor(i,j)=color)) then begin
     // выбор фигуры для хода
     ClearSelected;
     v:=curBoard.GetCell(i,j);
@@ -440,6 +446,7 @@ procedure TMainForm.ResetBtnClick(Sender: TObject);
 begin
  ClearSelected;
  InitNewGame;
+ displayBoard:=curBoardIdx;
  memo.Lines.Clear;
  DrawBoard(sender);
 end;
@@ -672,10 +679,10 @@ begin
    end
   else
    for i:=1 to 8 do begin
-    TextOut(3,518-i*CELL_SIZE,inttostr(9-i));
-    TextOut(499,518-i*CELL_SIZE,inttostr(9-i));
+    TextOut(3,w+7-i*CELL_SIZE,inttostr(9-i));
+    TextOut(w-11,w+7-i*CELL_SIZE,inttostr(9-i));
     TextOut(i*CELL_SIZE-18,-2,chr(96-i+9));
-    TextOut(i*CELL_SIZE-18,494,chr(96-i+9));
+    TextOut(i*CELL_SIZE-18,w-16,chr(96-i+9));
    end;
 
   // Фигуры

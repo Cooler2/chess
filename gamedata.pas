@@ -64,9 +64,9 @@ const
 
 type
  {$IFDEF COMPACT}
- TField=array[0..7] of cardinal;
+ TField=array[0..7] of cardinal; // индекс - у-координата (т.е. хранение построчное)
  {$ELSE}
- TField=array[0..7,0..7] of byte;
+ TField=array[0..7,0..7] of byte; // [x,y] - хранение по столбцам
  {$ENDIF}
  PField=^TField;
 
@@ -89,7 +89,7 @@ type
   function CellIsEmpty(x,y:integer):boolean; inline;
   function CellOccupied(x,y:integer):boolean; inline;
   function GetCell(x,y:integer):byte; inline;
-  procedure SetCell(x,y:integer;value:byte); inline;
+  procedure SetCell(x,y:integer;value:integer); {$IFNDEF COMPACT} inline; {$ENDIF}
   function GetPieceType(x,y:integer):byte; inline;
   function GetPieceColor(x,y:integer):byte; inline;
   function HasChild(turnFrom,turnTo:integer):integer; // есть ли среди потомков вариант с указанным ходом? Если есть - возвращает его
@@ -438,13 +438,20 @@ implementation
    result:=CompareMem(@b1,@b2,sizeof(TField)+2);
   end;
 
+ const
+  BOARD_DATA_SIZE = sizeof(TField)+2;
+
+ // Важно, чтобы хэш получался одинаковый и в 32 и в 64-битном режиме.
+ // В x64 можно было бы сделать быстрее, но тогде в x86 совместимая реализация будет гораздо медленнее.
+ // Сейчас компромиссный вариант: работает с одинаковой скоростью, хоть и не так быстро
  function BoardHash(var b:TBoard):int64;
+  {$IFDEF CPU386}
   asm
    push esi
    push edi
    push ebx
    mov esi,b
-   mov ecx,66
+   mov ecx,BOARD_DATA_SIZE
    xor eax,eax
    xor edx,edx
    xor ebx,ebx
@@ -464,6 +471,39 @@ implementation
    pop edi
    pop esi
   end;
+  {$ELSE}
+  asm
+   push rsi
+   push rdi
+   push rbx
+   mov rsi,b
+   mov rcx,BOARD_DATA_SIZE
+   xor rax,rax
+   xor rdx,rdx
+   xor rbx,rbx
+   xor rdi,rdi
+   mov r8,offset randomtab
+@01:
+   add dl,[rsi]
+   add bl,[rsi]
+
+   xor eax,[r8+rdx*4]
+   xor rdi,[r8+rbx*4+1024]
+//   xor rax,[r8+rdx*8]
+//   xor rdi,[r8+rbx*8]
+   sub dl,ah
+   add bl,al
+   inc rsi
+   dec rcx
+   jnz @01
+   //xor rax,rdi
+   shl rdi,32
+   or rax,rdi
+   pop rbx
+   pop rdi
+   pop rsi
+  end;
+  {$ENDIF}
 
  function GetCachedRate(var b:TBoard;out hash:int64):boolean;
   var
@@ -683,12 +723,20 @@ implementation
 
  function TBoard.CellIsEmpty(x,y:integer):boolean;
   begin
+   {$IFDEF COMPACT}
+   result:=cells[y] and ($F shl (x*4))=0;
+   {$ELSE}
    result:=cells[x,y]=0;
+   {$ENDIF}
   end;
 
  function TBoard.CellOccupied(x,y:integer):boolean;
   begin
+   {$IFDEF COMPACT}
+   result:=cells[y] and ($F shl (x*4))<>0;
+   {$ELSE}
    result:=cells[x,y]<>0;
+   {$ENDIF}
   end;
 
  procedure TBoard.Clear;
@@ -730,12 +778,20 @@ function FieldFromStr(st: string):TField;
 
  function GetPieceType(const f:TField;x,y:integer):integer; inline;
   begin
+   {$IFDEF COMPACT}
+   result:=(f[y] shr (x*4)) and PieceMask;
+   {$ELSE}
    result:=f[x,y] and PieceMask;
+   {$ENDIF}
   end;
 
  function GetPieceColor(const f:TField;x,y:integer):integer; inline;
   begin
+   {$IFDEF COMPACT}
+   result:=(f[y] shr (x*4)) and ColorMask;
+   {$ELSE}
    result:=f[x,y] and ColorMask;
+   {$ENDIF}
   end;
 
  function FieldToStr(f:TField):string;
@@ -760,23 +816,56 @@ function FieldFromStr(st: string):TField;
 
  function TBoard.GetCell(x,y:integer):byte;
   begin
+   {$IFDEF COMPACT}
+   result:=(cells[y] shr (x*4)) and $F;
+   {$ELSE}
    result:=cells[x,y];
+   {$ENDIF}
   end;
 
  function TBoard.GetPieceColor(x,y:integer):byte;
   begin
+   {$IFDEF COMPACT}
+   result:=(cells[y] shr (x*4)) and ColorMask;
+   {$ELSE}
    result:=cells[x,y] and ColorMask;
+   {$ENDIF}
   end;
 
  function TBoard.GetPieceType(x,y:integer):byte;
   begin
+   {$IFDEF COMPACT}
+   result:=(cells[y] shr (x*4)) and PieceMask;
+   {$ELSE}
    result:=cells[x,y] and PieceMask;
+   {$ENDIF}
   end;
 
- procedure TBoard.SetCell(x,y:integer;value:byte);
+ procedure TBoard.SetCell(x,y:integer;value:integer);
+  {$IFDEF COMPACT}
+  asm
+   // rcx - self
+   // rdx - x
+   // r8 - y
+   // r9 - value
+   lea r10,[rcx+r8*4] // адрес строки данных, rcx свободен
+   mov rcx,rdx // rdx свободен
+   shl rcx,2 // rcx = x*4
+   mov eax,[r10] // строка данных
+   mov rdx,15
+   shl rdx,cl // rdx - маска
+   not rdx
+   and eax,edx
+   shl r9,cl // r9 = value shl x*4
+   or eax,r9d
+   mov [r10],eax // сохраняем результат
+  end;
+   //cells[y]:=(cells[y] and not ($F shl x)) or (value shl x);
+ {$ELSE}
   begin
    cells[x,y]:=value;
   end;
+ {$ENDIF}
 
  function TBoard.ToString: string;
   begin
