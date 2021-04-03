@@ -174,7 +174,8 @@ var
 begin
   curBoardIdx:=moveReady;
   curBoard:=@data[curBoardIdx];
-  moveReady:=-1;
+  moveReady:=0;
+  LogMessage('AI turn: %s - %s ',[NameCell(curBoard.lastTurnFrom),NameCell(curBoard.lastTurnTo)]);
 
   try // записать ход в файл
    AssignFile(f,moveFileName);
@@ -310,13 +311,13 @@ begin
   // игра окончена?
   if gameState in [1..3] then StopAI
   else
-   if startBtn.Down then ResumeAI;
+   if startBtn.Down then PlayerMadeTurn;
 end;
 
 procedure TMainForm.PBoxMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
- i,j,v,cx,cy,piece:integer;
+ i,j,v,cx,cy,piece,cell:integer;
  color,color2:byte;
  b:TBoard;
  moves:TMovesList;
@@ -375,25 +376,29 @@ begin
  if (button=mbLeft) then begin
    // если не наш ход и компьютер думает - двигать нельзя
    if StartBtn.Down and (playerWhite xor curBoard.WhiteTurn) then exit;
+   cell:=i+j shl 4;
    if (curPiecePos=255) or (curBoard.GetPieceColor(i,j)=color) then begin
+    // выбор фигуры для хода
     ClearSelected;
     v:=curBoard.GetCell(i,j);
     if v and ColorMask<>color then exit;
     selected[i,j]:=selected[i,j] xor 1;
-    curPiecePos:=i+j shl 4;
+    curPiecePos:=cell;
     GetAvailMoves(curBoard^,curPiecePos,moves);
     for i:=1 to moves[0] do
      selected[moves[i] and $F,moves[i] shr 4]:=2;
     DrawBoard(sender);
    end else begin
-    if curPiecePos=i+j shl 4 then begin // отмена выбора
+    if curPiecePos=cell then begin
+     // клик в то же поле = отмена выбора
      curPiecePos:=255;
      ClearSelected;
-    end else begin // Делаем ход
+    end else begin
+     // выбрано целевое поле
      if selected[i,j]=2 then begin // можно пойти
       // проверить допустимость хода
       b:=curBoard^;
-      DoMove(b,curPiecePos,i+j shl 4);
+      DoMove(b,curPiecePos,cell);
       CalcBeatable(b,beatable);
       for cx:=0 to 7 do
        for cy:=0 to 7 do
@@ -405,9 +410,17 @@ begin
         end;
       // Ход можно делать
       PauseAI;
-      curBoardIdx:=AddChild(curBoardIdx);
-      curBoard:=@data[curBoardIdx];
-      DoMove(curBoard^,curPiecePos,i+j shl 4);
+      // нет ли уже в дереве соответствующего продолжения
+      i:=curBoard.HasChild(curPiecePos,cell);
+      if i>0 then begin
+       curBoardIdx:=i;
+       curBoard:=@data[curBoardIdx];
+      end else begin
+       // если нет - создать его
+       curBoardIdx:=AddChild(curBoardIdx);
+       curBoard:=@data[curBoardIdx];
+       DoMove(curBoard^,curPiecePos,cell);
+      end;
       onTurnMade;
      end;
     end;
@@ -577,9 +590,9 @@ begin
    King:st:='Кр';
    Pawn:st:=' ';
   end;
-  st:=st+NameCell(lastTurnFrom and $F,lastTurnFrom shr 4);
+  st:=st+NameCell(lastTurnFrom);
   if lastPiece<>0 then st:=st+':' else st:=st+'-';
-  st:=st+NameCell(lastTurnTo and $F,LastTurnTo shr 4);
+  st:=st+NameCell(lastTurnTo);
   CalcBeatable(curBoard^,beatable);
   for i:=0 to 7 do
    for j:=0 to 7 do
@@ -706,9 +719,11 @@ var
  r:single;
  fl:boolean;
  v1,v2,i,j:integer;
+
 begin
- EstimatePosition(displayBoard,false,true);
- with data[displayBoard] do begin
+ data[0]:=data[displayBoard];
+ EstimatePosition(0,false,true);
+ with data[0] do begin
   r:=-rate; // в базе оценка за соперника, показываем противоположную
   status.Panels[0].text:=Format('%5.3f : %5.3f = %4.3f',[whiteRate,blackRate,r]);
 

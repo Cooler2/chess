@@ -78,12 +78,12 @@ type
   padding:word;
   // --- поля выше этой строки являются состоянием позиции: участвуют в сравнении и вычислении хэша
   weight:shortint;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист (1..199)
-  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   depth:byte;
+  flags:byte; // флаги последнего хода
+  parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
-  flags:byte; // флаги последнего хода
   procedure Clear;
   function CellIsEmpty(x,y:integer):boolean; inline;
   function CellOccupied(x,y:integer):boolean; inline;
@@ -91,6 +91,7 @@ type
   procedure SetCell(x,y:integer;value:byte); inline;
   function GetPieceType(x,y:integer):byte; inline;
   function GetPieceColor(x,y:integer):byte; inline;
+  function HasChild(turnFrom,turnTo:integer):integer; // есть ли среди потомков вариант с указанным ходом? Если есть - возвращает его
   procedure FromString(st:string);
   function ToString:string;
  end;
@@ -156,6 +157,7 @@ var
  function AllocBoard:integer; inline; // allocate data node
  function AddChild(_parent:integer):integer; // allocate new node and make it child
  procedure DeleteNode(node:integer;updateLinks:boolean=true);
+ procedure DeleteChildrenExcept(node,childNode:integer); // удалить всех потомков node, кроме childNode
  function CountLeaves(node:integer):integer;
 
  // Операции над доской
@@ -175,7 +177,8 @@ var
 
  // Вспомогательные функции
  // ---
- function NameCell(x,y:integer):string; // формирует имя клетки, например 'b3'
+ function NameCell(x,y:integer):string; overload; // формирует имя клетки, например 'b3'
+ function NameCell(cell:integer):string; overload; // формирует имя клетки, например 'b3'
  function FieldToStr(f:TField):string;
  function FieldFromStr(st:string):TField;
  function IsPlayerTurn:boolean; // true - ход игрока, false - противника
@@ -244,7 +247,7 @@ implementation
     inc(spinCounter);
     YieldProcessor;
    end;
-   MemoryBarrier;
+   MemoryBarrier; /// TODO: возможно не всегда нужен
   end;
 
  procedure Unlock(var lock:NativeInt); inline;
@@ -302,15 +305,14 @@ implementation
   end;
 
  // Удаление узла из дерева
- procedure DeleteNode(node:integer;updateLinks:boolean=true);
+ procedure _DeleteNode(node:integer;updateLinks:boolean=true);
   var
    d:integer;
   begin
-   SpinLock(dataLocker);
    // 1. Удаление всех потомков
    d:=data[node].firstChild;
    while d>0 do begin
-    DeleteNode(d,false);
+    _DeleteNode(d,false);
     d:=data[d].nextSibling;
    end;
    FreeBoard(node);
@@ -323,7 +325,26 @@ implementation
      if data[parent].lastChild=node then data[parent].lastChild:=prevSibling;
     end;
    end;
+  end;
+
+ // Удаление узла из дерева
+ procedure DeleteNode(node:integer;updateLinks:boolean=true);
+  begin
+   SpinLock(dataLocker);
+   _DeleteNode(node,updateLinks);
    Unlock(dataLocker);
+  end;
+
+ procedure DeleteChildrenExcept(node,childNode:integer);
+  var
+   next:integer;
+  begin
+   node:=data[node].firstChild;
+   while (node>0) do begin
+    next:=data[node].nextSibling;
+    if node<>childNode then DeleteNode(node);
+    node:=next;
+   end;
   end;
 
  function CountLeaves(node:integer):integer;
@@ -395,6 +416,11 @@ implementation
  function NameCell(x,y:integer):string;
   begin
    result:=chr(97+x)+inttostr(y+1);
+  end;
+
+ function NameCell(cell:integer):string;
+  begin
+   result:=NameCell(cell and $F,cell shr 4);
   end;
 
 { function CompareBoards(b1,b2:integer):integer;
@@ -760,6 +786,16 @@ function FieldFromStr(st: string):TField;
     if pair.Named('rF') then rFlags:=pair.GetInt else
     if pair.Named('f') then flags:=pair.GetInt;
    end;
+  end;
+
+ function TBoard.HasChild(turnFrom,turnTo:integer):integer;
+  begin
+   result:=firstChild;
+   while result>0 do
+    with data[result] do begin
+     if (lastTurnFrom=turnFrom) and (lastTurnTo=turnTo) then exit;
+     result:=nextSibling;
+    end;
   end;
 
 
