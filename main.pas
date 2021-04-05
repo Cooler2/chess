@@ -12,7 +12,7 @@ uses
   System.ImageList;
 
 const
- moveFileName='chessmove.txt';
+ moveFileName='..\chessmove.txt';
  CELL_SIZE = 64; // размер клетки поля
 
 type
@@ -182,7 +182,7 @@ begin
   curBoardIdx:=moveReady;
   curBoard:=@data[curBoardIdx];
   moveReady:=0;
-  LogMessage('AI turn: %s - %s ',[NameCell(curBoard.lastTurnFrom),NameCell(curBoard.lastTurnTo)]);
+  LogMessage('Get turn from AI');
 
   try // записать ход в файл
    AssignFile(f,moveFileName);
@@ -197,13 +197,14 @@ end;
 procedure TMainForm.MakeExternalTurn;
 var
  f:TextFile;
- x,y:integer;
+ x,y,i:integer;
 begin
  try
   assignFile(f,moveFileName);
   reset(f);
   readln(f,TurnFrom,TurnTo);
   closeFile(f);
+  LogMessage(' === External turn: %s %s ===',[NameCell(turnFrom),nameCell(turnTo)]);
   DeleteFile(moveFileName);
   if PlayerWhite then begin
    x:=40+CELL_SIZE*(TurnFrom and $F);
@@ -213,6 +214,10 @@ begin
    y:=40+CELL_SIZE*(TurnFrom shr 4);
   end;
   PBoxMouseDown(mainForm,mbLeft,[],x,y);
+  for i:=1 to 10 do begin
+   application.ProcessMessages;
+   Sleep(20);
+  end;
   if PlayerWhite then begin
    x:=40+CELL_SIZE*(TurnTo and $F);
    y:=40+CELL_SIZE*(7-TurnTo shr 4);
@@ -266,6 +271,7 @@ begin
  AssignFile(f,OpenD.filename);
  Reset(f);
  InitNewGame;
+ displayBoard:=curBoardIdx;
  while not eof(f) do begin
   readln(f,st);
   if st<>'' then AddString(sa,st);
@@ -285,11 +291,19 @@ begin
  end;
  undoBtn.enabled:=curBoard.parent>=0;
  redobtn.enabled:=false;
+ turnWhiteBtn.Down:=curBoard.whiteTurn;
+ turnBlackBtn.Down:=not curBoard.whiteTurn;
+
  DrawBoard(sender);
 end;
 
 procedure TMainForm.NowTurnGroupClick(Sender: TObject);
 begin
+ if StartBtn.Down then begin
+  turnWhiteBtn.Down:=curBoard.whiteTurn;
+  turnBlackBtn.Down:=not curBoard.whiteTurn;
+  exit;
+ end;
  if curBoard.parent>=0 then
   if not AskYesNo('История партии будет удалена.'#13#10'Вы уверены?','Внимание!') then begin
    turnWhiteBtn.Down:=curBoard.whiteTurn;
@@ -301,6 +315,7 @@ begin
  onTurnMade;
 end;
 
+// Один из игроков сделал ход
 procedure TMainForm.onTurnMade;
 begin
   displayBoard:=curBoardIdx;
@@ -318,7 +333,8 @@ begin
   // игра окончена?
   if gameState in [1..3] then StopAI
   else
-   if startBtn.Down then PlayerMadeTurn;
+   if startBtn.Down and
+    (curBoard.whiteTurn<>playerWhite) then PlayerMadeTurn;
 end;
 
 procedure TMainForm.PBoxMouseDown(Sender: TObject; Button: TMouseButton;
@@ -429,6 +445,7 @@ begin
        curBoard:=@data[curBoardIdx];
        DoMove(curBoard^,curPiecePos,cell);
       end;
+      LogMessage(' === Player turn: %s ===',[curBoard.LastTurnAsString]);
       onTurnMade;
      end;
     end;
@@ -461,18 +478,23 @@ end;
 procedure TMainForm.selLevelChange(Sender: TObject);
 begin
  aiLevel:=selLevel.Itemindex+1;
+ case aiLevel of
+  1:turnTimeLimit:=3;
+  2:turnTimeLimit:=5;
+  3:turnTimeLimit:=10;
+  4:turnTimeLimit:=20;
+ end;
 end;
 
 procedure TMainForm.UndoBtnClick(Sender: TObject);
 var
  i:integer;
 begin
- (*  /// TODO:
  if sender=UndoBtn then begin
-  if historyPos>0 then begin
-   board:=history[historyPos];
-   dec(historyPos,1);
-   if board.whiteturn then
+  if curBoard.parent>0 then begin
+   curboardIdx:=curBoard.parent;
+   curBoard:=@data[curBoardIdx];
+   if curBoard.whiteturn then
     memo.Lines.Delete(memo.lines.Count-1)
    else begin
     i:=memo.lines.count-1;
@@ -481,15 +503,16 @@ begin
   end;
  end;
  if sender=RedoBtn then begin
-  if historyPos<historySize-1 then begin
-   board:=history[historyPos+2];
-   inc(historyPos,1);
-   AddLastTurnNote;
-  end;
+  if curBoard.firstChild>0 then begin
+    curBoardIdx:=curBoard.firstChild;
+    curBoard:=@data[curBoardIdx];
+    AddLastTurnNote;
+   end;
  end;
- UndoBtn.Enabled:=historyPos>0;
- RedoBtn.enabled:=historyPos<historySize-1;
- DrawBoard(sender); *)
+ UndoBtn.Enabled:=curBoard.parent>0;
+ RedoBtn.enabled:=curBoard.firstChild>0;
+ displayBoard:=curboardIdx;
+ DrawBoard(sender);
 end;
 
 procedure TMainForm.ShowTreeBtnClick(Sender: TObject);
@@ -508,8 +531,8 @@ begin
   undoBtn.enabled:=false;
   redobtn.enabled:=false;
   menuBtn.enabled:=false;
-  turnWhiteBtn.Enabled:=false;
-  turnBlackBtn.Enabled:=false;
+{  turnWhiteBtn.Enabled:=false;
+  turnBlackBtn.Enabled:=false;}
   StartAI;
  end else begin
   startBtn.Enabled:=false;
@@ -587,36 +610,21 @@ var
  beatable:TBeatable;
 begin
  if curBoard.parent<0 then exit;
- with curBoard^ do begin
-  x:=lastTurnTo and $F;
-  y:=lastTurnTo shr 4;
-  v:=GetPieceType(x,y);
-  case v of
-   Knight:st:='К';
-   Queen:st:='Ф';
-   Rook:st:='Л';
-   Bishop:st:='С';
-   King:st:='Кр';
-   Pawn:st:=' ';
-  end;
-  st:=st+NameCell(lastTurnFrom);
-  if lastPiece<>0 then st:=st+':' else st:=st+'-';
-  st:=st+NameCell(lastTurnTo);
-  CalcBeatable(curBoard^,beatable);
+
+ st:=curBoard.LastTurnAsString(false);
+ CalcBeatable(curBoard^,beatable);
+ with curBoard^ do
   for i:=0 to 7 do
    for j:=0 to 7 do
     if (GetCell(i,j)=KingWhite) and (beatable[i,j] and Black>0) or
        (GetCell(i,j)=KingBlack) and (beatable[i,j] and White>0) then st:=st+'+';
-  if (v=King) and (x=LastTurnFrom and $F-2) then st:='0-0-0';
-  if (v=King) and (x=LastTurnFrom and $F+2) then st:='0-0';
 
   while length(st)<7 do st:=st+' ';
   s2:=''; if memo.lines.count<9 then s2:=' ';
-  if GetPieceColor(x,y)=Black then
+  if curBoard.whiteTurn then
    memo.Lines[memo.Lines.Count-1]:=memo.Lines[memo.Lines.Count-1]+' '+st
   else
    memo.Lines.Add(s2+inttostr(memo.lines.Count+1)+' '+st);
- end;
 end;
 
 procedure TMainForm.ClearBtnClick(Sender: TObject);
@@ -722,25 +730,52 @@ begin
  end;
 end;
 
+procedure CheckGameOver;
+var
+ i,j,cnt,color:integer;
+ moves:TMovesList;
+begin
+ // Есть ли ходы?
+ if curBoard.whiteTurn then color:=White else color:=Black;
+ cnt:=0;
+ for i:=0 to 7 do
+  for j:=0 to 7 do
+   if curBoard.GetPieceColor(i,j)=color then begin
+    GetAvailMoves(curBoard^,i+j shl 4,moves);
+    inc(cnt,moves[0]);
+   end;
+ if cnt=0 then
+  if curBoard.flags and movCheck>0 then
+   curBoard.flags:=curBoard.flags or movCheckmate
+  else
+   curBoard.flags:=curBoard.flags or movStalemate;
+end;
+
 // Оценивает позицию и, если надо, завершает игру
 procedure TMainForm.Estimate;
 var
  r:single;
  fl:boolean;
  v1,v2,i,j:integer;
-
 begin
- data[0]:=data[displayBoard];
- EstimatePosition(0,false,true);
- with data[0] do begin
+ if displayBoard<>curBoardIdx then begin
+  data[0]:=data[displayBoard]; // чтобы не портить текущую позицию
+  i:=0;
+ end else
+  i:=curBoardIdx;
+ EstimatePosition(i,false,true);
+ with data[i] do begin
   r:=-rate; // в базе оценка за соперника, показываем противоположную
   status.Panels[0].text:=Format('%5.3f : %5.3f = %4.3f',[whiteRate,blackRate,r]);
 
   if showExtraStatus then
-   status.Panels[1].text:=Format('w=%d flags=%x rF=%x depth=%d',[weight,flags,rFlags,depth]);
+   status.Panels[1].text:=Format('w=%d flags=%x rF=%x q=%d depth=%d',
+     [weight,flags,rFlags,round(quality),depth]);
  end;
 
  if displayBoard<>curBoardIdx then exit;
+
+ CheckGameOver;
  if curBoard.flags and movRepeat>0 then begin
   gameState:=1;
   ShowMessage('Повторение ходов!','Конец игры');

@@ -34,8 +34,8 @@ implementation
 
  const
   // штраф за незащищенную фигуру под боем
-  bweight:array[0..6] of single=(0,1, 5.2, 3.1, 3.1, 9.3, 1000);
-  bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 1000);
+  bweight:array[0..6] of single=(0,1, 5.2, 3.1, 3.1, 9.3, 250);
+  bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 250);
 
  type
   TBasket=record
@@ -49,6 +49,7 @@ implementation
    count:integer;
    procedure Init;
    procedure Clear;
+   // Нельзя добавлять элемент дважды!
    procedure Add(b:integer); overload;
    procedure Add(boards:PInteger;count:integer); overload;
    function Get:integer;
@@ -79,6 +80,9 @@ implementation
   threads:array of TThinkThread;
   // список активных листьев
   active:TBaskets;
+
+  stage:integer;
+  delayedResume:integer;
 
   // Для статистики
   startTime:int64;
@@ -131,25 +135,16 @@ implementation
    end;
 
    // Оценка уже есть в кэше?
-   if not noCache then
+{   if not noCache then
     if GetCachedRate(b^,hash) then begin
-      IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: убрать)
+      IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: избавиться)
       exit;
-     end;
+     end;}
 
    with b^ do begin
-    wRate:=-1000;
-    bRate:=-1000;
+    wRate:=-300;
+    bRate:=-300;
     flags:=flags and (not movCheck);
-    (*if quality=0 then begin
-     for i:=0 to 7 do
-      for j:=0 to 7 do
-       case GetCell(i,j) of
-        KingWhite:WhiteRate:=WhiteRate+1000;
-        KingBlack:BlackRate:=BlackRate+1000;
-       end;
-     exit;
-    end; *)
     CalcBeatable(b^,beatable);
     // Базовая оценка
     for i:=0 to 7 do
@@ -169,11 +164,11 @@ implementation
        // если король под шахом и ход противника - игра проиграна
        KingWhite:begin
         // условие инвертировано
-        if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+1005;
+        if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+305;
         if beatable[i,j] and Black>0 then flags:=flags or movCheck;
        end;
        KingBlack:begin
-        if not WhiteTurn or (beatable[i,j] and White=0) then bRate:=bRate+1005;
+        if not WhiteTurn or (beatable[i,j] and White=0) then bRate:=bRate+305;
         if beatable[i,j] and White>0 then flags:=flags or movCheck;
        end;
       end;
@@ -274,9 +269,10 @@ implementation
     whiteRate:=wRate;
     blackRate:=bRate;
     rate:=(wRate-bRate)*(1+10/(bRate+wRate));
-  {   rate:=(bRate-wRate)*(1+1/(bRate+wRate))+random(3)/2000
-    else
-     rate:=(wRate-bRate)*(1+1/(bRate+wRate))+random(3)/2000;}
+
+    if (wRate<-200) or (bRate<-200) then begin
+     flags:=flags or movCheckmate;
+    end;
 
     // сохранить вычисленную оценку в кэше
     if not noCache then
@@ -340,297 +336,15 @@ implementation
     end;
   end;
 
-
-(*
- procedure CheckTree(root:integer);
-  var
-   c:integer;
-  begin
-   data[root].flags:=data[root].flags or movVerified;
-   c:=data[root].firstChild;
-   while c>0 do begin
-    CheckTree(c);
-    Assert(data[c].parent=root);
-    c:=data[c].nextSibling;
-   end;
-  end;
-
- procedure SortChildren(root:integer);
-  var
-   children:array[1..120] of integer;
-   i,j,d,n,c:integer;
-  begin
-   n:=0;
-   c:=data[root].firstChild;
-   if c=0 then exit;
-   while c>0 do begin
-    inc(n);
-    children[n]:=c;
-    c:=data[c].nextSibling;
-   end;
-   for i:=1 to n-1 do
-    for j:=i+1 to n do
-     if data[children[j]].rate>data[children[i]].rate then begin
-      d:=children[i];
-      children[i]:=children[j];
-      children[j]:=d;
-     end;
-   c:=children[1];
-   data[root].firstChild:=c;
-   data[c].prevSibling:=0;
-   d:=c;
-   for i:=2 to n do begin
-    c:=children[i];
-    data[c].prevSibling:=d;
-    data[d].nextSibling:=c;
-    d:=c;
-   end;
-   data[c].nextSibling:=0;
-   data[root].lastChild:=c;
-  end;
-
- // Обрезание дерева
- procedure CutTree(root:integer;p1,p2:integer);
-  var
-   i,j,d:integer;
-   v,v2,gate,gate2:single;
-   dir,fl:boolean;
-  begin
-   SortChildren(root);
-  // t1:=p1 div (data[root].depth+p2);
-  // t2:=(p1+20) div (data[root].depth+p2-1);
-
-   //dir:=data[root].depth and 1=0;
-   dir:=data[root].whiteTurn xor playerWhite;
-   if dir then d:=data[root].firstChild
-     else d:=data[root].lastChild;
-
-   j:=1; v:=0; gate:=(4+sqr(data[root].depth))/p1; gate2:=gate*0.5;
-   v2:=data[root].rate; v:=v2;
-   fl:=false;
-   while d>0 do begin
-    if (abs(data[d].rate-v2)>gate) and fl then
-        DeleteNode(d)
-      else begin
-       CutTree(d,p1,p2);
-       gate2:=gate2*0.6+0.01;
-      end;
-    v:=data[d].rate;
-    if dir then d:=data[d].nextSibling else d:=data[d].prevSibling;
-    if abs(data[d].rate-v)>gate2 then fl:=true;
-    inc(j);
-   end;
-
-  end;
-
-(*
- //
- function TThinkThread.ThinkIteration(root:integer;iteration:byte):boolean;
-  var
-   i,j,c,limit:integer;
-   arr:array[1..100] of integer;
-  begin
-   result:=true;
-   case iteration of
-    1:begin
-     BuildTree(root);
-     RateTree(root);
-    end;
-    2..19:begin
-     if data[root].firstChild=data[root].lastChild then begin
-      result:=false; exit;
-     end;
-     limit:=8*(220*level+500);
-     if limit>20000 then limit:=20000;
-     totalLeafCount:=CountLeaves(root);
-     if totalLeafCount>limit then begin
-      CutTree(root,8,0);
-      totalLeafCount:=CountLeaves(root);
-     end;
-     if totalLeafCount>limit then begin
-      CutTree(root,20,0);
-      totalLeafCount:=CountLeaves(root);
-     end;
-     if totalLeafCount>limit then begin
-      CutTree(root,40,0);
-      totalLeafCount:=CountLeaves(root);
-     end;
-     if totalLeafCount>limit then begin
-      result:=false; exit;
-     end;
-     inc(d1); inc(d2);
-     if totalLeafCount<limit div 10 then
-      BuildTree(root)
-     else
-      BuildTree(root);
-     RateTree(root);
-    end;
-   end;
-  end;
-
- // Найти ход
- procedure TThinkThread.DoThink;
-  var
-   startTime,limit:cardinal;
-   i,j,n:integer;
-   weight:integer;
-   b:TBoard;
-   color,color2,phase:byte;
-   v:single;
-   hash:int64;
-   fl:boolean;
-   beatable:TBeatable;
-  begin
-   starttime:=gettickcount;
-
-   if PlayerWhite then begin
-    color:=Black; color2:=white;
-   end else begin
-    color:=White; color2:=black;
-   end;
-
-   // 1. Поиск ходов в библиотеке
-   if useLibrary and MakeTurnFromLibrary then exit;
-
-   // 2. Обдумывание
-   // определение фазы игры
-   GetGamePhase;
-
-   // 2.1. Составить все различные позиции на 3 полухода вперед
-   status:='Составление позиций';
-   try
-   qStart:=1; // текущий эл-т для обработки
-   qlast:=1; // последний добавленный в очередь эл-т
-   freecnt:=0;
-   for i:=memsize downto 1 do begin
-    inc(freecnt);
-    freeList[freecnt]:=i;
-   end;
-   dec(freecnt);
-   /// TODO: не портить дерево!
-   //data[1]:=board;
-   data[1].depth:=0;
-   data[1].weight:=26;
-   data[1].parent:=0;
-   data[1].nextSibling:=0;
-   data[1].firstChild:=0;
-   data[1].lastChild:=0;
-   EstimatePosition(1,10);
-   data[1].flags:=0;
-  // data[1].flags:=data[1].flags and not movDB;
-   cacheUse:=0; cacheMiss:=0;
-   estCounter:=0;
-
-   phase:=0;
-   if level=0 then begin
-    // упрощенный уровень
-    BuildTree(1);
-    RateTree(1,10);
-   end else begin
-    // обычный уровень
-    case level of
-     1:limit:=100000;
-     2:limit:=500000;
-     3:limit:=2000000;
-    end;
-    d1:=3; d2:=4;
-    for i:=1 to 11 do begin
-     phase:=i;
-     status:='Фаза '+inttostr(i);
-     if not ThinkIteration(1,i) then begin
-      dec(phase);
-      break;
-     end;
-     if (plimit>0) and (i>=plimit) then break;
-     if (estCounter>limit) or (terminated) then break;
-    end;
-   end;
-   totalLeafCount:=CountLeaves(1);
-
-  { status:='Углублённая проработка';
-   BuildTree(1,5,6);
-   RateTree(1,false);}
-   v:=0;
-   if cacheUse>0 then v:=(cacheUse-cacheMiss)/cacheUse;
-   status:='Фаз: '+inttostr(phase)+
-    '. Поз: '+inttostr(estCounter)+' / '+inttostr(memsize-freeCnt)+
-    ' / '+inttostr(totalLeafCount)+
-    ', кэш: '+floattostrf(v,ffFixed,3,2)+
-    '. Время: '+FloatToStrF((GetTickCount-startTime)/1000,ffFixed,3,1);
-
-   // Выбор оптимального хода
-   if data[1].firstChild=0 then begin
-    // нет ходов
-    CalcBeatable(data[1],beatable);
-    gameState:=1; // пат
-    for i:=0 to 7 do
-     for j:=0 to 7 do
-      if (data[1].GetCell(i,j)=King+color) and (beatable[i,j] and color2>0) then
-       gameState:=2; // мат
-    terminate;
-    exit;
-   end else begin
-    // Ходы есть - выбрать лучший
-    i:=data[1].firstChild;
-    j:=i;
-    while i>0 do begin
-     if data[i].rate=data[1].rate then begin
-      j:=i; break;
-     end;
-     i:=data[i].nextSibling;
-    end;
-   end;
-
-   if abs(data[j].rate)>100 then status:=status+' МАТ';
-
-   // Обновить базу
-   if selfTeach then begin
-    LoadRates;
-    hash:=BoardHash(data[1]);
-    fl:=true;
-    for i:=0 to length(dbItems)-1 do
-     if dbItems[i].hash=hash then begin
-      dbItems[i].rate:=round(data[j].rate*1000) shl 8;
-      fl:=false;
-      break;
-     end;
-    if fl then begin
-     i:=length(dbItems);
-     setLength(dbItems,i+1);
-     dbItems[i].hash:=hash;
-     dbItems[i].rate:=round(data[j].rate*1000) shl 8;
-    end;
-    SaveRates;
-   end;
-
-   moveReady:=j;
-   except
-    on e:exception do ErrorMessage(e.message);
-   end;
-
-  end;
-
- procedure TThinkThread.Execute;
-  begin
-  // fillchar(cache,sizeof(cache),0);
-   running:=true;
-   if selfTeach then LoadRates;
-   repeat
-    if (moveReady<0) and (gameState=0) and (curBoard.whiteTurn xor playerWhite) then
-     DoThink
-    else
-     sleep(9); // Если ход не наш - ничего не делать
-   until terminated;
-   running:=false;
-  end;
-
-  *)
-
  // Корректирует вес поддерева, добавляет позиции с положительным весом в список активных
  procedure AddWeight(node,add:integer);
+  var
+   oldWeight:integer;
   begin
+   oldWeight:=data[node].weight;
+   ASSERT((add>0) and (add<16));
    inc(data[node].weight,add);
-   ASSERT(data[node].weight>-50);
+   ASSERT((data[node].weight>-20) and (data[node].weight<250),'Node: '+inttostr(node));
    if data[node].firstChild>0 then begin
     node:=data[node].firstChild;
     while node>0 do begin
@@ -638,38 +352,53 @@ implementation
      node:=data[node].nextSibling;
     end;
    end else
-    if data[node].weight>0 then
+    if (oldWeight<=0) and (data[node].weight>0) then
      active.Add(node);
   end;
 
- // Проходит по дереву и вычисляет оценки у позиций, имеющих продолжение
- // вызывается только для позиций, имеющих продолжение
- // Возвращает кол-во потомков у ноды
- function RateSubtree(node:integer):integer;
+ // Проходит по дереву и вычисляет оценки у позиций
+ // Обновляет качество оценок
+ // Возвращает сколько качества нужно прибавить предку
+ function RateSubtree(node:integer):single;
+  const
+   QUALITY_FADE = 0.6;
   var
    i,d:integer;
    best,v:single;
    mode:boolean;
   begin
-   result:=1;
-   mode:=data[node].whiteTurn xor playerWhite; // что вычислять: минимум или максимум
-   d:=data[node].firstChild;
-   if data[d].firstChild>0 then inc(result,RateSubtree(d));
-   best:=data[d].rate;
-   d:=data[d].nextSibling;
-   while d>0 do begin
-    if data[d].firstChild>0 then inc(result,RateSubtree(d))
-     else inc(result);
-    v:=data[d].rate;
-    if mode then begin
-     if v>best then best:=v;
-    end else begin
-     if v<best then best:=v;
+   with data[node] do begin
+    d:=firstChild;
+    if d=0 then begin // лист без потомков
+     if flags and movRated=0 then begin
+      result:=quality;
+      flags:=flags or movRated;
+     end else
+      result:=0;
+     exit;
     end;
-    d:=data[d].nextSibling;
+    // Есть потомки: вычислить оценку
+    result:=0;
+    mode:=whiteTurn xor playerWhite; // что вычислять: минимум или максимум
+    if d>0 then begin
+     result:=result+RateSubtree(d)*QUALITY_FADE;
+     best:=data[d].rate;
+     d:=data[d].nextSibling;
+     while d>0 do begin
+      result:=result+RateSubtree(d)*QUALITY_FADE;
+      v:=data[d].rate;
+      if mode then begin
+       if v>best then best:=v;
+      end else begin
+       if v<best then best:=v;
+      end;
+      d:=data[d].nextSibling;
+     end;
+    end;
+    flags:=flags or movRated;
+    quality:=quality+result;
+    rate:=best;
    end;
-   data[node].rate:=best;
-   data[node].children:=result;
   end;
 
  procedure RateTree;
@@ -677,8 +406,9 @@ implementation
    time:int64;
   begin
    time:=MyTickCount;
-   curBoard.children:=0;
-   if curBoard.firstChild>0 then RateSubtree(curBoardIdx);
+   if curBoard.firstChild>0 then begin
+    curBoard.quality:=curBoard.quality+RateSubtree(curBoardIdx);
+   end;
    time:=MyTickCount-time;
   end;
 
@@ -688,7 +418,7 @@ implementation
    i,j,k,color,newNode,cellFrom:integer;
    moves:TMovesList;
    toAdd:array[0..255] of integer;
-   toAddCnt:integer;
+   toAddCnt,cnt:integer;
   begin
    with data[node] do begin
     // не продолжать позиции, которые:
@@ -703,25 +433,31 @@ implementation
 
    // продолжить дерево
    toAddCnt:=0;
+   cnt:=0; // кол-во доступных ходов, втч таких, которые не будут продолжены
    for i:=0 to 7 do
     for j:=0 to 7 do begin
       if data[node].GetPieceColor(i,j)<>color then continue;
       cellFrom:=i+j shl 4;
       GetAvailMoves(data[node],cellFrom,moves);
+
       for k:=1 to moves[0] do begin
        newNode:=AddChild(node);
        if newNode=0 then exit; // закончилась память
        DoMove(data[newNode],cellFrom,moves[k]);
+       // TODO: нет смысла детально оценивать ноды, которые будут продолжены, т.к. оценка все равно перезапишется.
+       // Достаточно лишь проверить не произошло ли с этим ходом завершение игры.
+       // Правда таких узлов все-равно немного, так что выгода от такой оптимизации будет не больше 5-10%
        EstimatePosition(newNode,false);
        with data[newNode] do begin
         if abs(rate)>200 then begin // недопустимый ход?
          DeleteNode(newNode,true);
          continue;
         end;
+        inc(cnt);
         // скорректируем вес
-        if flags and movBeat>0 then weight:=weight+4
+        if flags and movBeat>0 then weight:=weight+5
         else
-        if flags and movCheck>0 then weight:=weight+7;
+        if flags and movCheck>0 then weight:=weight+10; // безусловное продолжение - нужно проверить можно ли уйти из под шаха
 
         if weight<=0 then continue; // позиция не заслуживает продолжения
        end;
@@ -729,7 +465,22 @@ implementation
        inc(toAddCnt);
       end;
     end;
-   if toAddCnt>0 then active.Add(@toAdd,toAddCnt);
+   if toAddCnt>0 then
+    active.Add(@toAdd,toAddCnt)
+   else
+    if cnt=0 then
+     with data[node] do begin
+      // Нет ни одного хода: значит либо мат либо пат
+      if flags and movCheck=0 then begin
+       rate:=0;
+       flags:=flags or movStalemate;
+      end else begin
+       // Если был поставлен шах - то оцениваем позицию как мат
+       if whiteTurn xor playerWhite then rate:=-300+depth
+        else rate:=300-depth;
+       flags:=flags or movCheckmate;
+      end;
+     end;
   end;
 
  // Поток занимается исключительно развитием дерева поиска:
@@ -767,6 +518,30 @@ implementation
    threadRunning:=false;
   end;
 
+ // Раз в секунду обновляет отображаемый статус AI
+ procedure UpdateStats;
+  var
+   i:integer;
+   time:int64;
+  begin
+   // Статистика
+   time:=MyTickCount;
+   i:=round((time-startTime)/1000);
+   if i<>secondsElapsed then begin
+    secondsElapsed:=i;
+    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, оценок: %s',
+     [stage,secondsElapsed,FormatInt(memSize-freeCnt),FormatInt(estCounter-startEstCounter)]);
+    // Кол-во оценок в секунду:
+
+    if lastStatTime>0 then begin
+     i:=1000*(estCounter-lastEstCounter) div (time-lastStatTime);
+     if i>0 then LogMessage('Rate: %d positions/sec',[i]);
+    end;
+    lastEstCounter:=estCounter;
+    lastStatTime:=time;
+   end;
+  end;
+
  // Рекурсивный обход дерева: находим листья, вычисляем их веса и заносим в список активных
  procedure ProcessTree(node,baseWeight:integer;baseRate:single);
   var
@@ -792,16 +567,17 @@ implementation
    end;
   end;
 
- // Подрезка дерева: удаляются незначимые ветки
- procedure CutTree;
+ function BaseWeight:integer;
   begin
-
-  end;
-
- //
- procedure UpdateJob;
-  begin
-
+   // базовый начальный вес
+   case aiLevel of
+    1:result:=25;
+    2:result:=28;
+    3:result:=31;
+    4:result:=34;
+    else
+     raise EWarning.Create('Bad AI level');
+   end;
   end;
 
  // Запускается однократно при старте AI. Очищает дерево поиска.
@@ -813,6 +589,7 @@ implementation
    node:integer;
   begin
    time:=MyTickCount;
+   stage:=1;
    startTime:=time;
    secondsElapsed:=-1;
    startEstCounter:=estCounter;
@@ -822,41 +599,219 @@ implementation
    DeleteChildrenExcept(curBoardIdx,0);
 
    active.Clear;
-   // базовый начальный вес
-   case aiLevel of
-    1:w:=25;
-    2:w:=28;
-    3:w:=31;
-    4:w:=34;
-   end;
-   curBoard.weight:=w;
+   curBoard.weight:=BaseWeight;
    active.Add(curBoardIdx);
 
    time:=MyTickCount-time;
    LogMessage('StartThinking time = %d',[time]);
   end;
 
- // Раз в секунду обновляет отображаемый статус AI
- procedure UpdateStats;
-  var
-   i:integer;
-   time:int64;
-  begin
-   // Статистика
-   time:=MyTickCount;
-   i:=round((time-startTime)/1000);
-   if i<>secondsElapsed then begin
-    secondsElapsed:=i;
-    aiStatus:=Format('Прошло: %d c, позиций: %s, оценок: %s',
-     [secondsElapsed,FormatInt(memSize-freeCnt),FormatInt(estCounter-startEstCounter)]);
-    // Кол-во оценок в секунду:
 
-    if lastStatTime>0 then begin
-     i:=1000*(estCounter-lastEstCounter) div (time-lastStatTime);
-     if i>0 then LogMessage('Rate: %d positions/sec',[i]);
+ // Подрезка дерева: удаляются незначимые ветки
+ procedure CutTree(node,recursion:integer);
+  var
+   n,count,next,maxRecursion,deleted:integer;
+   min,max,v,tr:single;
+   st:string;
+  begin
+   n:=data[node].firstChild;
+   if n<=0 then exit;
+   maxRecursion:=(stage-1) div 2;
+   // Вычисляем минимум и максимум
+   count:=1;
+   min:=data[n].rate;
+   max:=min;
+   n:=data[n].nextSibling;
+   while n>0 do begin
+    inc(count);
+    v:=data[n].rate;
+    if v<min then min:=v;
+    if v>max then max:=v;
+    n:=data[n].nextSibling;
+   end;
+   if count<2 then exit; // единственная ветка нечего удалять
+   if (count<4) and (not data[node].whiteTurn xor playerWhite) then exit; // на ходу соперника оставлять минимум 3 варианта
+
+   deleted:=0;
+   // а теперь рабочий проход
+   n:=data[node].firstChild;
+   while n>0 do begin
+    v:=data[n].rate;
+    next:=data[n].nextSibling;
+    if data[node].whiteTurn xor playerWhite then begin
+     // ход AI:
+     if (v=min) then begin
+       st:=st+data[n].LastTurnAsString+'; ';
+       DeleteNode(n);
+       inc(deleted);
+     end;
+    end else begin
+     // ход игрока: ветки с низкой оценкой - развиваем, с высокой - удаляем
+     if v=max then begin
+       st:=st+data[n].LastTurnAsString+'; ';
+       DeleteNode(n);
+       inc(deleted);
+     end;
     end;
-    lastEstCounter:=estCounter;
-    lastStatTime:=time;
+    n:=next;
+   end;
+   if recursion=0 then begin
+    n:=memSize-freeCnt;
+    LogMessage('Tree cut: nodes=%d (%d%%), ch=%d, min=%.3f, max=%.3f :: %s',
+      [n,round(100*n/memSize),count-deleted,min,max,st]);
+   end;
+  end;
+
+ // Вычисляет приоритет развития позиции исходя из текущей оценки и её качества
+ function NodePriority(n:integer):single; inline;
+  begin
+   with data[n] do begin
+    if abs(rate)<200 then begin
+     if whiteTurn xor playerWhite then
+      result:=20-10*rate-sqrt(quality)*0.01 // ход игрока: развивать оценки с низкой оценкой
+     else
+      result:=20+10*rate-sqrt(quality)*0.01; // ход AI: развивать оценки с высокой оценкой
+    end else
+     result:=-100;
+   end;
+  end;
+
+ // Продлить перспективные ветви дерева
+ // Нужно чтобы каждая новая фаза не продолжалась слишком уж долго,
+ // поэтому по мере углубления дерева нужно уменьшать задачу
+ procedure ExtendTree(node,recursion:integer);
+  var
+   n,count,next,v,boost:integer;
+   p,max,min,q,tr:single;
+   prior:array[0..99] of single;
+   st:string;
+  begin
+   n:=data[node].firstChild;
+   if n<=0 then exit;
+   // Вычисляем рейтинг веток
+   count:=0; max:=-100000; min:=100000;
+   while n>0 do begin
+    p:=NodePriority(n);
+    prior[count]:=p;
+    if p>max then max:=p;
+    if p<min then min:=p;
+    n:=data[n].nextSibling;
+    inc(count);
+   end;
+   // порог для продвижения - не зависит от качества оценки, однако буст может быть и нулевым
+   tr:=max-(max-min)*(0.2*(recursion+1));
+   st:=#13#10'  :: ';
+   // теперь рабочий проход
+   n:=data[node].firstChild;
+   while n>0 do begin
+    q:=Clamp(sqrt(data[n].quality),10,500);
+    p:=NodePriority(n);
+
+    boost:=Clamp(round(300/q),0,10); // буст может получиться нулевым, но ветка продолжится за счёт рекурсии
+    if p>tr then begin
+     v:=round(boost*(p-tr)/(max-tr)); // чем больше приоритет - тем сильнее продвигать
+     if v>0 then AddWeight(n,v);
+     if recursion=0 then
+      st:=st+Format('%s-%s [%d]; ',[NameCell(data[n].lastTurnFrom),NameCell(data[n].lastTurnTo),v]);
+     if q>100 then // достаточно развитые позиции продлеваем рекурсивно
+      ExtendTree(n,recursion+1);
+    end;
+    n:=data[n].nextSibling;
+   end;
+
+   if recursion=0 then begin
+    n:=memSize-freeCnt;
+    LogMessage('Stage %d: nodes=%d (%d%%), estCnt=%d, ch=%d %s',
+      [stage,n,round(100*n/memSize),estCounter,count,st]);
+   end;
+  end;
+
+ // Проверяет достаточно ли собрано информации чтобы сделать ход
+ // Возвращает true если ход сделан
+ function TryMakeDecision:boolean;
+  var
+   q,max:single;
+   st:string;
+   i,n,best:integer;
+   fl:boolean;
+  begin
+   ASSERT(curBoard.firstChild>0);
+   result:=false;
+   n:=memSize-freeCnt;
+   LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d',
+    [round(curBoard.quality),n,round(100*n/memSize),estCounter]);
+
+   // 1. Имеется ли единственный ход
+   n:=curBoard.firstChild;
+   if data[n].nextSibling<=0 then begin // единственный ход
+    moveReady:=n;
+    result:=true;
+   end;
+
+   // пройдём по всем вариантам и выберем наилучший
+   n:=curBoard.firstChild;
+   max:=-10000;
+   while n>0 do begin
+    if data[n].rate>max then begin
+     best:=n;
+     max:=data[n].rate;
+    end;
+    n:=data[n].nextSibling;
+   end;
+   // Победа?
+   if max>=200 then begin
+    moveReady:=best;
+    result:=true;
+   end;
+
+   // Единственный ход с высокой оценкой?
+   if not result then begin
+    n:=curBoard.firstChild;
+    fl:=true;
+    while n>0 do begin
+     if data[n].rate>max-10 then
+      fl:=false;
+     n:=data[n].nextSibling;
+    end;
+    if fl then begin
+     moveReady:=best;
+     result:=true;
+    end;
+   end;
+
+   // 3. Прочие лимиты
+   case aiLevel of
+    1:q:=20000;
+    2:q:=50000;
+    3:q:=100000;
+    4:q:=300000;
+   end;
+   if not result and
+     (curBoard.quality>q) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
+    moveReady:=best;
+    result:=true;
+   end;
+
+   // Если ход выбран...
+   if result then begin
+    i:=1;
+    st:='Tree state:';
+    n:=curBoard.firstChild;
+    while n>0 do begin
+     // вывод всех вариантов в лог
+     st:=st+Format(#13#10' %d) %s %.3f (q=%d)',[i,data[n].LastTurnAsString,data[n].rate,round(data[n].quality)]);
+     n:=data[n].nextSibling;
+     inc(i);
+    end;
+    LogMessage(st);
+    LogMessage(' === AI turn: %s ===',[data[moveReady].LastTurnAsString]);
+
+    stage:=1;
+    // удаление ненужных веток
+    n:=freeCnt;
+    DeleteChildrenExcept(curBoardIdx,moveReady);
+    LogMessage('Branches deleted, %d nodes removed',[freeCnt-n]);
+    exit;
    end;
   end;
 
@@ -865,7 +820,15 @@ implementation
  procedure AiTimer;
   var
    time:int64;
+   c:integer;
   begin
+   if delayedResume>0 then begin
+    dec(delayedResume);
+    if delayedResume=0 then begin
+     ResumeAI;
+     exit;
+    end;
+   end;
    if not started or not running then exit;
    PauseAI;
    try
@@ -875,32 +838,72 @@ implementation
     // 1) нет активных элементов (работа выполнена)
     // 2) закончилась память
     if (active.count=0) or (freeCnt<100) then begin
-     RateTree;
-     if freeCnt<100 then CutTree;
-     UpdateJob;
+     RateTree; // без этого - никуда (осторожно - может занимать многовато времени!)
+
+     if freeCnt<100 then CutTree(curBoardIdx,0);
+
+     if active.count=0 then begin
+      if not isMyTurn or not TryMakeDecision then begin
+        active.Clear;
+        //VerifyTree;
+        if stage<25 then begin
+         inc(stage);
+         ExtendTree(curBoardIdx,0);
+         LogMessage('Nodes to extend: %d',[active.count]);
+        end;
+      end;
+     end;
     end;
 
     time:=MyTickCount-time;
-    if time>10 then LogMessage('Timer spent %d ms',[time]);
+    if time>20 then LogMessage('Timer spent %d ms',[time]);
    except
     on e:Exception do LogMessage('Error in timer: '+ExceptionMsg(e));
    end;
-   ResumeAI;
+   if delayedResume=0 then
+    ResumeAI;
   end;
 
  // Игрок сделал ход: значит curBoard уже указывает на одного из потомков дерева поиска
  // Нужно удалить из дерева лишние ветки, обновить веса и продолжить поиск в текущей ветке
  procedure PlayerMadeTurn;
   var
-   cnt:integer;
+   cnt,x,y,i,n,k,cellFrom,color,newNode:integer;
+   moves:TMovesList;
   begin
    if not started then exit;
+   ASSERT(running=false);
    // удаление ненужных веток
    cnt:=freeCnt;
    DeleteChildrenExcept(curBoard.parent,curBoardIdx);
    cnt:=FreeCnt-cnt;
    LogMessage('Deleting branches: %d nodes freed',[cnt]);
-   ResumeAI;
+   active.Clear;
+   stage:=1;
+   // Нужно убедиться, что в дереве есть все возможные ходы, т.к. какие-то ветки могли быть удалены при обрезке дерева
+   if curBoard.whiteTurn then color:=White else color:=Black;
+   for x:=0 to 7 do
+    for y:=0 to 7 do begin
+      if curBoard.GetPieceColor(x,y)<>color then continue;
+      cellFrom:=x+y shl 4;
+      GetAvailMoves(curBoard^,cellFrom,moves);
+      for k:=1 to moves[0] do begin
+       if curBoard.HasChild(cellFrom,moves[k])>0 then continue; // уже есть такой ход
+       newNode:=AddChild(curBoardIdx);
+       ASSERT(newNode>0);
+       DoMove(data[newNode],cellFrom,moves[k]);
+       EstimatePosition(newNode,false);
+       with data[newNode] do begin
+        if abs(rate)>200 then begin // недопустимый ход?
+         DeleteNode(newNode,true);
+         continue;
+        end;
+       end;
+       data[newNode].weight:=BaseWeight-10;
+       active.Add(newNode);
+      end;
+    end;
+   delayedResume:=10;
   end;
 
  // Инициализация AI
@@ -918,6 +921,7 @@ implementation
    {$IFDEF SINGLETHREADED}
    n:=1;
    {$ENDIF}
+   //n:=1;
    SetLength(threads,n);
    for i:=0 to high(threads) do begin
     threads[i]:=TThinkThread.Create;
@@ -1031,9 +1035,10 @@ procedure TBaskets.Add(b: integer);
 
 procedure TBaskets.InternalAdd(idx:integer);
  var
-  weight:byte;
+  weight:integer;
  begin
   weight:=data[idx].weight;
+  if weight>127 then weight:=127;
   ASSERT(weight>0);
   with baskets[weight] do begin
    if last>0 then links[last]:=idx;
@@ -1056,15 +1061,17 @@ function TBaskets.Get:integer;
   end;
   with baskets[lastBasket] do begin
    result:=first;
-   dec(self.count);
+   ASSERT(result>0);
+   dec(count);
    if first=last then begin
     first:=0; last:=0;
     // корзина пуста - перейти к следующей
     repeat
      dec(lastBasket);
     until (lastBasket=0) or (baskets[lastBasket].first>0);
-   end else
+   end else begin
     first:=links[result];
+   end;
   end;
   Unlock(lock);
  end;

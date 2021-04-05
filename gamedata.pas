@@ -42,7 +42,7 @@ const
  movRepeat    = $10; // конец игры из-за повторения позиций
  movDB        = $20; // позиция оценена из БД
  movLib       = $40; // ход взят из библиотеки
- movVerified  = $80;
+ movRated     = $80; // узел уже поучаствовал в оценке качества
 
  movGameOver = movCheckmate+movStalemate+movRepeat; // один из вариантов конца игры
 
@@ -55,11 +55,11 @@ const
 
  // Размер кэша оценок
  {$IFDEF CPUx64}
- cacheSize=$800000; //  8M элементов - 96M памяти
- cacheMask=$7FFFFF;
+ cacheSize=$1000000; //  16M элементов - 256M памяти
+ cacheMask= $FFFFFF;
  {$ELSE}
- cacheSize=$400000; //  4M элементов - 48M памяти
- cacheMask=$3FFFFF;
+ cacheSize=$800000; //  8M элементов - 128M памяти
+ cacheMask=$7FFFFF;
  {$ENDIF}
 
 type
@@ -77,14 +77,15 @@ type
   whiteTurn:boolean; // чей сейчас ход
   padding:word;
   // --- поля выше этой строки являются состоянием позиции: участвуют в сравнении и вычислении хэша
-  weight:shortint;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист (1..199)
+  weight:integer;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист (1..199)
   depth:byte;
   flags:byte; // флаги последнего хода
   parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
-  children:integer; // общее кол-во дочерних нодов
+  quality:single; // качество оценки - зависит от кол-ва дочерних позиций и глубины просмотра
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
+  debug:byte;
   procedure Clear;
   function CellIsEmpty(x,y:integer):boolean; inline;
   function CellOccupied(x,y:integer):boolean; inline;
@@ -95,14 +96,28 @@ type
   function HasChild(turnFrom,turnTo:integer):integer; // есть ли среди потомков вариант с указанным ходом? Если есть - возвращает его
   procedure FromString(st:string);
   function ToString:string;
+  function LastTurnAsString(short:boolean=true):string;
  end;
 
  TMovesList=array[0..63] of byte; // [0] - number of moves, [1]..[n] - target cell position
 
- // Сохранённая оценка позиции
+ // Запись БД оценок
+ TRateEntry=record
+  // информация о позиции - точно такая как в TBoard
+  cells:TField;
+  rFlags:byte;
+  whiteTurn:boolean;
+  // ---
+  rate:single;
+  quality:byte;
+  procedure FromString(st:string);
+  function ToString:string;
+ end;
+
+ // Сохранённая в кэше оценка позиции
  TCacheItem=record
   hash:int64;
-  rate:single; //
+  rate:single;
   flags:byte; // флаги (рокировки) оцененноё позиции
   quality:byte; // показатель качества оценки
   extra:word; // дополнительное поле, например для обнаружения хэш-коллизий
@@ -144,7 +159,7 @@ var
  turnLib:array of TSavedTurn;
 
  // база оценок
- dbItems:array of TCacheItem;
+ dbRates:array of TRateEntry;
 
  // Кэш оценок позиций: чтобы заново не вычислять оценку позиций, которые уже встречались ранее,
  // т.к. к одной и той же позиции можно прийти по-разному либо на разных стадиях игры.
@@ -163,6 +178,7 @@ var
  procedure DeleteNode(node:integer;updateLinks:boolean=true);
  procedure DeleteChildrenExcept(node,childNode:integer); // удалить всех потомков node, кроме childNode
  function CountLeaves(node:integer):integer;
+ procedure VerifyTree; // проверяет целостность дерева: правильность выделения, отсутствие двойных ссылок
 
  // Операции над доской
  // ---
@@ -268,10 +284,14 @@ implementation
    result:=freeList[freeCnt];
    data[result].firstChild:=0;
    data[result].lastChild:=0;
+   ASSERT(data[result].debug=0);
+   data[result].debug:=$DD; // allocated
   end;
 
  procedure FreeBoard(index:integer); inline;
   begin
+   ASSERT(data[index].debug=$DD,'Index='+inttostr(index));
+   data[index].debug:=0;
    freeList[freecnt]:=index;
    inc(freecnt);
   end;
@@ -286,19 +306,19 @@ implementation
    end;
    with data[result] do begin
     parent:=_parent;
-    nextSibling:=0; prevSibling:=0;
+    nextSibling:=0; prevSibling:=data[_parent].lastChild;
     cells:=data[_parent].cells;
     depth:=data[_parent].depth+1;
     weight:=data[_parent].weight-10;
     rFlags:=data[_parent].rFlags;
     whiteTurn:=not data[_parent].whiteTurn;
     flags:=0;
+    quality:=1;
    end;
    with data[_parent] do begin
     if (lastChild>0) then begin
      // не первый потомок
      data[lastChild].nextSibling:=result;
-     data[result].prevSibling:=lastChild;
      lastChild:=result;
     end else begin
      // первый потомок
@@ -317,7 +337,7 @@ implementation
    // 1. Удаление всех потомков
    d:=data[node].firstChild;
    while d>0 do begin
-    _DeleteNode(d,false);
+    _DeleteNode(d,true);
     d:=data[d].nextSibling;
    end;
    FreeBoard(node);
@@ -358,13 +378,60 @@ implementation
   begin
    result:=0;
    d:=data[node].firstChild;
-   if d=0 then begin
-    result:=1; exit;
-   end;
+   if d=0 then exit(1);
    while d>0 do begin
     inc(result,CountLeaves(d));
     d:=data[d].nextSibling;
    end;
+  end;
+
+ function CountNodes(node:integer):integer;
+  var
+   d:integer;
+  begin
+   result:=1;
+   d:=data[node].firstChild;
+   if d=0 then exit;
+   while d>0 do begin
+    inc(result,CountNodes(d));
+    d:=data[d].nextSibling;
+   end;
+  end;
+
+
+ procedure VerifyTree; // проверяет целостность дерева: правильность выделения, отсутствие двойных ссылок
+  var
+   i,n:integer;
+  procedure MarkSubtree(node,parent:integer);
+   begin
+    ASSERT(data[node].debug=$DD);
+    ASSERT(data[node].parent=parent);
+    dec(data[node].debug);
+    parent:=node;
+    node:=data[node].firstChild;
+    while node>0 do begin
+     MarkSubtree(node,parent);
+     node:=data[node].nextSibling;
+    end;
+   end;
+  begin
+   for i:=1 to high(freeList)-1 do begin
+    n:=freeList[i];
+    if (i<freeCnt) and (data[n].debug<>0) then
+     raise EError.Create('Free node was allocated');
+   end;
+
+   n:=CountNodes(1);
+   if n+freeCnt+1<>memSize then
+    raise EError.Create('Tree node count doesn''t match');
+
+   MarkSubtree(1,data[1].parent);
+
+   for i:=1 to high(data) do begin
+    if data[i].debug<>0 then inc(data[i].debug);
+    ASSERT(data[i].debug in [0,$DD]);
+   end;
+
   end;
 
  procedure InitNewGame;
@@ -374,6 +441,7 @@ implementation
    LogMessage('Init New Game');
    // Init data storage
    SetLength(data,memSize);
+   ZeroMem(data[0],length(data)*sizeof(TBoard));
    SetLength(freeList,memSize);
    freecnt:=0;
    // список свободных элементов. [0] - не используется
@@ -496,7 +564,7 @@ implementation
    inc rsi
    dec rcx
    jnz @01
-   //xor rax,rdi
+//   xor rax,rdi
    shl rdi,32
    or rax,rdi
    pop rbx
@@ -671,27 +739,37 @@ implementation
  procedure UpdateCacheWithRates;
   var
    i,h:integer;
+   hash:int64;
+   b:TBoard;
   begin
-    for i:=0 to high(dbItems) do begin
-     h:=dbItems[i].hash and cacheMask;
-     cache[h]:=dbItems[i];
-     cache[h].flags:=cache[h].flags or movDB;
+    for i:=0 to high(dbRates) do begin
+     move(dbRates[i],b,sizeof(TField)+2);
+     hash:=BoardHash(b);
+     h:=hash and cacheMask;
+     cache[h].hash:=hash;
+     cache[h].rate:=dbRates[i].rate;
+     cache[h].flags:=dbRates[i].rFlags or movDB;
+     cache[h].quality:=dbRates[i].quality;
     end;
   end;
 
  // Загрузка базы данных оценок
  procedure LoadRates;
   var
-   f:file;
+   f:TextFile;
    n:integer;
+   st:string;
   begin
    if not fileExists(ratesFileName) then exit;
    try
     assign(f,ratesFileName);
-    reset(f,1);
-    n:=filesize(f) div sizeof(TCacheItem);
-    setLength(dbItems,n);
-    blockread(f,dbItems[0],n*sizeof(TCacheItem));
+    reset(f);
+    while not eof(f) do begin
+     readln(f,st);
+     n:=length(dbRates);
+     SetLength(dbRates,n+1);
+     dbRates[n].FromString(st);
+    end;
     close(f);
     UpdateCacheWithRates;
    except
@@ -701,13 +779,14 @@ implementation
 
  procedure SaveRates;
   var
-   f:file;
+   f:TextFile;
+   i:integer;
   begin
    try
     assign(f,ratesFileName);
-    rewrite(f,1);
-    if length(dbItems)>0 then
-     blockwrite(f,dbItems[0],sizeof(TCacheItem)*length(dbItems));
+    rewrite(f);
+    for i:=0 to high(dbRates) do
+     writeln(f,dbRates[i].ToString);
     close(f);
    except
     on e:exception do ErrorMessage('Error in SaveDB: '+e.message);
@@ -902,6 +981,31 @@ function FieldFromStr(st: string):TField;
   end;
 
 
+function TBoard.LastTurnAsString;
+ var
+  x,y,v:integer;
+  st:string;
+ begin
+  x:=lastTurnTo and $F;
+  y:=lastTurnTo shr 4;
+  v:=GetPieceType(x,y);
+  if not short then
+   case v of
+    Knight:st:='К';
+    Queen:st:='Ф';
+    Rook:st:='Л';
+    Bishop:st:='С';
+    King:st:='Кр';
+    Pawn:st:=' ';
+   end;
+  st:=st+NameCell(lastTurnFrom);
+  if lastPiece<>0 then st:=st+':' else st:=st+'-';
+  st:=st+NameCell(lastTurnTo);
+  if (v=King) and (x=LastTurnFrom and $F-2) then st:='0-0-0';
+  if (v=King) and (x=LastTurnFrom and $F+2) then st:='0-0';
+  result:=st;
+ end;
+
 { TSavedTurn }
 
 function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
@@ -912,5 +1016,30 @@ function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
   if CompareMem(@b.cells,@field,sizeof(field)) then exit;
   result:=true;
  end;
+
+{ TRateEntry }
+
+ procedure TRateEntry.FromString(st: string);
+  var
+   i:integer;
+   sa:StringArr;
+   pair:TNameValue;
+  begin
+   sa:=Split(';',st);
+   for i:=0 to high(sa) do begin
+    pair.Init(sa[i]);
+    if pair.Named('cells') then cells:=FieldFromStr(pair.value) else
+    if pair.Named('white') then whiteTurn:=pair.GetInt<>0 else
+    if pair.Named('rF') then rFlags:=pair.GetInt else
+    if pair.Named('r') then rate:=pair.GetFloat else
+    if pair.Named('q') then quality:=pair.GetInt;
+   end;
+ end;
+
+ function TRateEntry.ToString: string;
+  begin
+   result:=Format('cells=%s; white=%d; rF=%d; r=%.3f; q=%d',
+    [FieldToStr(cells),byte(whiteTurn),rFlags,rate,quality]);
+  end;
 
 end.

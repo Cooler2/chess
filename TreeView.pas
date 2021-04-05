@@ -163,8 +163,8 @@ procedure DrawTreeNodes(canvas:TCanvas);
       canvas.Pen.Width:=2
      else begin
       canvas.Pen.Width:=1;
-      if data[items[i]].flags and movVerified=0 then canvas.brush.color:=$E0E0E0
-       else canvas.brush.color:=$E0C0C0;
+      //if data[items[i]].flags and movVerified=0 then canvas.brush.color:=$E0E0E0
+      canvas.brush.color:=$E0C0C0;
      end;
      if i=j then canvas.brush.color:=$D4F0D4 // элемент с наилучшей оценкой
       else
@@ -184,7 +184,7 @@ procedure DrawTreeNodes(canvas:TCanvas);
      cy:=pos[i];
      if d>0 then begin
       canvas.RoundRect(cx-COL_WIDTH div 2+6,cy-7,cx+COL_WIDTH div 2-6,cy+8,5,5);
-      if data[idx].firstChild>0 then begin
+      if data[items[i]].firstChild>0 then begin
        x:=cx+COL_WIDTH div 2-9;
        canvas.MoveTo(x,cy-6);
        canvas.LineTo(x,cy+7);
@@ -267,7 +267,7 @@ begin
     mainForm.displayBoard:=idx;
     if Button=mbRight then begin
      v:=items[i];
-     ShowMessage(Format('ID:%d, children=%d',[v,data[v].children]),'Node info');
+     ShowMessage(Format('ID:%d, q=%d',[v,round(data[v].quality)]),'Node info');
     end;
     SetLength(treeData,col+2);
     BuildTree;
