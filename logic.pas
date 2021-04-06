@@ -471,7 +471,7 @@ implementation
  procedure DoMove(var board:TBoard;from,target:byte);
   var
    x,y,nx,ny:integer;
-   v:byte;
+   v,piece:byte;
   begin
    with board do begin
     x:=from and $F;
@@ -499,27 +499,34 @@ implementation
       SetCell(nx,ny-1,0);
     end;
 
-    if v and $F=King then begin
-     if v and ColorMask=White then
-      rFlags:=rFlags or $4
-     else
+    piece:=v and PieceMask;
+    if piece=King then begin
+     // король сделал ход - рокировка в будущем невозможна
+     if v and ColorMask=White then begin
+      rFlags:=rFlags or $4;
+      wKingPos:=target;
+     end else begin
       rFlags:=rFlags or $40;
-     // Рокировка
-     if (x=4) and (nx=2) then begin
-      SetCell(3,y,GetCell(0,y));
-      SetCell(0,y,0);
-      if y=0 then rFlags:=rFlags or $8
-       else rFlags:=rFlags or $80;
+      bKingPos:=target;
      end;
-     if (x=4) and (nx=6) then begin
-      SetCell(5,y,GetCell(7,y));
-      SetCell(7,y,0);
-      if y=0 then rFlags:=rFlags or $8
-       else rFlags:=rFlags or $80;
+     // Рокировка
+     if (x=4) then begin
+      if (nx=2) then begin // в длинную сторону
+       SetCell(3,y,GetCell(0,y)); // ладья
+       SetCell(0,y,0);
+       if y=0 then rFlags:=rFlags or $8
+        else rFlags:=rFlags or $80;
+      end else
+      if (nx=6) then begin // в короткую сторону
+       SetCell(5,y,GetCell(7,y)); // ладья
+       SetCell(7,y,0);
+       if y=0 then rFlags:=rFlags or $8
+        else rFlags:=rFlags or $80;
+      end;
      end;
     end;
 
-    if v and $F=Rook then
+    if piece=Rook then
      if x=0 then begin
       if (y=0) and (v and ColorMask=White) then rFlags:=rFlags or 1;
       if (y=7) and (v and ColorMask=Black) then rFlags:=rFlags or $10;

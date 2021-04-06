@@ -38,7 +38,7 @@ const
  movBeat      = 1;   // ход со взятием фигуры
  movCheck     = 2;   // ход с шахом
  movCheckmate = 4;   // мат - конец игры
- movStalemate = 8;   // пат - конец игры
+ movStalemate = 8;   // пат либо ничья - конец игры
  movRepeat    = $10; // конец игры из-за повторения позиций
  movDB        = $20; // позиция оценена из БД
  movLib       = $40; // ход взят из библиотеки
@@ -50,7 +50,8 @@ const
  {$IFDEF CPUx64}
  memSize = 12000000;
  {$ELSE}
- memSize =  8000000;
+ //memSize =  8000000;
+ memSize =  2000000; // временно уменьшено
  {$ENDIF}
 
  // Размер кэша оценок
@@ -73,13 +74,14 @@ type
  PBoard=^TBoard;
  TBoard=record
   cells:TField; // [x,y]
-  rFlags:byte;  // флаги рокировки 1,2 - ладьи, 4 - король
+  rFlags:byte;  // флаги рокировки 1,2 - ладьи, 4 - король, 8 - уже сделана ($10/$20/$40/$80 - для черных)
   whiteTurn:boolean; // чей сейчас ход
   padding:word;
   // --- поля выше этой строки являются состоянием позиции: участвуют в сравнении и вычислении хэша
   weight:integer;   // используется в библиотеке как вес хода, а в логике - на сколько продлевать лист (1..199)
   depth:byte;
   flags:byte; // флаги последнего хода
+  wKingPos,bKingPos:byte; // позиции королей на доске
   parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
   quality:single; // качество оценки - зависит от кол-ва дочерних позиций и глубины просмотра
@@ -97,9 +99,10 @@ type
   procedure FromString(st:string);
   function ToString:string;
   function LastTurnAsString(short:boolean=true):string;
+  procedure UpdateKings;
  end;
 
- TMovesList=array[0..63] of byte; // [0] - number of moves, [1]..[n] - target cell position
+ TMovesList=array[0..35] of byte; // [0] - number of moves, [1]..[n] - target cell position
 
  // Запись БД оценок
  TRateEntry=record
@@ -292,6 +295,8 @@ implementation
   begin
    ASSERT(data[index].debug=$DD,'Index='+inttostr(index));
    data[index].debug:=0;
+   data[index].parent:=-1;
+   data[index].firstChild:=-1;
    freeList[freecnt]:=index;
    inc(freecnt);
   end;
@@ -308,10 +313,13 @@ implementation
     parent:=_parent;
     nextSibling:=0; prevSibling:=data[_parent].lastChild;
     cells:=data[_parent].cells;
+    rFlags:=data[_parent].rFlags;
+    wKingPos:=data[parent].wKingPos;
+    bKingPos:=data[parent].bKingPos;
     depth:=data[_parent].depth+1;
     weight:=data[_parent].weight-10;
-    rFlags:=data[_parent].rFlags;
     whiteTurn:=not data[_parent].whiteTurn;
+
     flags:=0;
     quality:=1;
    end;
@@ -332,13 +340,14 @@ implementation
  // Удаление узла из дерева
  procedure _DeleteNode(node:integer;updateLinks:boolean=true);
   var
-   d:integer;
+   d,next:integer;
   begin
    // 1. Удаление всех потомков
    d:=data[node].firstChild;
    while d>0 do begin
+    next:=data[d].nextSibling;
     _DeleteNode(d,true);
-    d:=data[d].nextSibling;
+    d:=next;
    end;
    FreeBoard(node);
 
@@ -952,7 +961,20 @@ function FieldFromStr(st: string):TField;
     [FieldToStr(cells),byte(whiteTurn),lastTurnFrom,lastTurnTo,rFlags,flags]);
   end;
 
- procedure TBoard.FromString(st: string);
+ procedure TBoard.UpdateKings;
+  var
+   i,j,v:integer;
+  begin
+   for i:=0 to 7 do
+    for j:=0 to 7 do begin
+     v:=GetCell(i,j);
+     if v=KingWhite then wKingPos:=i+j shl 4
+     else
+     if v=KingBlack then bKingPos:=i+j shl 4;
+    end;
+  end;
+
+procedure TBoard.FromString(st: string);
   var
    i:integer;
    sa:StringArr;
@@ -968,6 +990,7 @@ function FieldFromStr(st: string):TField;
     if pair.Named('rF') then rFlags:=pair.GetInt else
     if pair.Named('f') then flags:=pair.GetInt;
    end;
+   UpdateKings;
   end;
 
  function TBoard.HasChild(turnFrom,turnTo:integer):integer;

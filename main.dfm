@@ -222,14 +222,14 @@ object MainForm: TMainForm
   end
   object selLevel: TComboBox
     Left = 551
-    Top = 448
+    Top = 447
     Width = 151
     Height = 21
     Style = csDropDownList
     Anchors = [akTop, akRight]
-    ItemIndex = 2
+    ItemIndex = 1
     TabOrder = 3
-    Text = #1059#1089#1080#1083#1077#1085#1085#1099#1081
+    Text = #1041#1072#1079#1086#1074#1099#1081' '
     OnChange = selLevelChange
     Items.Strings = (
       #1059#1087#1088#1086#1097#1077#1085#1085#1099#1081' '

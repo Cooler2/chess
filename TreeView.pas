@@ -241,6 +241,7 @@ begin
  MainForm.displayBoard:=curBoardIdx;
  MainForm.DrawBoard(sender);
  gameState:=saveGameover;
+ PauseAfterThisStage(false);
  ResumeAI;
 end;
 
@@ -290,7 +291,6 @@ end;
 
 procedure TTreeWnd.FormShow(Sender: TObject);
 begin
- PauseAI;
  InitTree;
  BuildTree;
  saveGameover:=gameState;

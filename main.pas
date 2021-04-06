@@ -86,10 +86,12 @@ type
     animation:integer; // фаза анимации движения фигуры
     displayBoard:integer; // индекс отображаемой позиции (может отличаться от текущей в режиме просмотра дерева)
     curPiecePos:byte;     // позиция выбранной фигуры
+    myTurnStored:boolean;
     procedure ClearSelected;
     procedure MakeAiTurn;
     procedure MakeExternalTurn;
     procedure onTurnMade; // вызывать после изменения curBoardIdx
+    procedure UpdateCurPlrBtn;
   end;
 
 var
@@ -117,6 +119,10 @@ begin
  DrawBoard(sender);
  LoadLibrary;
  LoadRates;
+ try
+  DeleteFile(moveFileName);
+ except
+ end;
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word;
@@ -181,14 +187,15 @@ var
 begin
   curBoardIdx:=moveReady;
   curBoard:=@data[curBoardIdx];
+  LogMessage('Get turn from AI: %s',[curBoard.LastTurnAsString]);
   moveReady:=0;
-  LogMessage('Get turn from AI');
 
   try // записать ход в файл
    AssignFile(f,moveFileName);
    rewrite(f);
    writeln(f,curBoard.lastTurnFrom,' ',curBoard.lastTurnTo);
    closeFile(f);
+   myTurnStored:=true;
   except
   end;
   onTurnMade;
@@ -291,8 +298,7 @@ begin
  end;
  undoBtn.enabled:=curBoard.parent>=0;
  redobtn.enabled:=false;
- turnWhiteBtn.Down:=curBoard.whiteTurn;
- turnBlackBtn.Down:=not curBoard.whiteTurn;
+ UpdateCurPlrBtn;
 
  DrawBoard(sender);
 end;
@@ -300,14 +306,12 @@ end;
 procedure TMainForm.NowTurnGroupClick(Sender: TObject);
 begin
  if StartBtn.Down then begin
-  turnWhiteBtn.Down:=curBoard.whiteTurn;
-  turnBlackBtn.Down:=not curBoard.whiteTurn;
+  UpdateCurPlrBtn;
   exit;
  end;
  if curBoard.parent>=0 then
   if not AskYesNo('История партии будет удалена.'#13#10'Вы уверены?','Внимание!') then begin
-   turnWhiteBtn.Down:=curBoard.whiteTurn;
-   turnBlackBtn.Down:=not curBoard.whiteTurn;
+   UpdateCurPlrBtn;
    exit;
   end;
  curBoard.whiteTurn:=turnWhiteBtn.Down;
@@ -468,6 +472,12 @@ begin
  DrawBoard(sender);
 end;
 
+procedure TMainForm.UpdateCurPlrBtn;
+begin
+ turnWhiteBtn.Down:=curBoard.whiteTurn;
+ TurnBlackBtn.Down:=not curBoard.whiteTurn;
+end;
+
 procedure TMainForm.UpdateOptions(Sender: TObject);
 begin
  useLibrary:=LibEnableBtn.checked;
@@ -509,6 +519,7 @@ begin
     AddLastTurnNote;
    end;
  end;
+ UpdateCurPlrBtn;
  UndoBtn.Enabled:=curBoard.parent>0;
  RedoBtn.enabled:=curBoard.firstChild>0;
  displayBoard:=curboardIdx;
@@ -517,6 +528,15 @@ end;
 
 procedure TMainForm.ShowTreeBtnClick(Sender: TObject);
 begin
+ if StartBtn.Down then begin
+  PauseAfterThisStage(true);
+  status.Panels[0].Text:='Waiting...';
+  repeat
+   application.ProcessMessages;
+   Sleep(5);
+  until IsPausedAfterStage;
+  status.Panels[0].Text:='';
+ end;
  TreeWnd.Show;
 end;
 
@@ -547,6 +567,8 @@ begin
   MenuBtn.enabled:=true;
   turnWhiteBtn.Enabled:=true;
   turnBlackBtn.Enabled:=true;
+  undoBtn.enabled:=curBoard.parent>0;
+  redobtn.enabled:=curBoard.firstChild=curBoard.lastChild;
  end;
 end;
 
@@ -571,17 +593,6 @@ begin
  // попинать AI
  if StartBtn.Down then AiTimer;
 
-// Estimate;
-{ if not startBtn.Enabled and not thread.running then begin
-  StartBtn.enabled:=true;
-  StartBtn.Caption:='Start AI';
-  SwapBtn.Enabled:=true;
-  ResetBtn.enabled:=true;
-  ClearBtn.enabled:=true;
-  MenuBtn.enabled:=true;
-  UndoBtnClick(sender);
- end;}
-
  if StartBtn.Down then begin
   if IsAiRunning then
    status.Panels[1].Text:=AiStatus;
@@ -592,8 +603,12 @@ begin
  end;
 
  // если за игрока сделан ход - записан во внешнем файле
- if IsPlayerTurn and (animation=0)
-    and FileExists(moveFileName) then MakeExternalTurn;
+ if IsPlayerTurn and (animation=0) then begin
+    if FileExists(moveFileName) then begin
+     if not myTurnStored then MakeExternalTurn;
+    end else
+     myTurnStored:=false; // файл отсутствует - значит был удалён потребителем, и если появится снова - это для нас
+ end;
 
  if StartBtn.Down and not IsPlayerTurn and (animation=0)
     and (moveReady>0) then MakeAiTurn;

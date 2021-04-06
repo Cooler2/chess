@@ -16,6 +16,8 @@ interface
  procedure PauseAI;
  procedure ResumeAI;
  procedure StopAI;
+ procedure PauseAfterThisStage(b:boolean);
+ function IsPausedAfterStage:boolean;
  procedure AiTimer; // необходимо вызывать регулярно не менее 20 раз в секунду. Переключает режим работы AI
  procedure PlayerMadeTurn; // сообщает AI о том, что игрок сделал ход (вызывается в приостановленном состоянии)
  procedure AiPerfTest; // запустить тест производительности функций
@@ -61,10 +63,8 @@ implementation
    id:integer;
    threadRunning,idle:boolean;
    counter,waitCounter:integer;
+   constructor Create(id:integer);
    procedure Execute; override;
-{   procedure Reset;
-   function ThinkIteration(root:integer;iteration:byte):boolean;
-   procedure DoThink;}
   end;
 
   TAiState=(
@@ -78,14 +78,16 @@ implementation
   //state:TAiState; // состояние выставляется из главного потока (из таймера)
   // рабочие потоки
   threads:array of TThinkThread;
+  workingThreads:NativeInt;
   // список активных листьев
   active:TBaskets;
 
+  stopAfterStage:integer=50; // запрос остановки поиска после фазы
   stage:integer;
-  delayedResume:integer;
+  pausedAfterStage:boolean;
 
   // Для статистики
-  startTime:int64;
+  startTime:int64; // время начала хода
   secondsElapsed:integer;
   startEstCounter:integer;
   lastEstCounter:integer;
@@ -97,6 +99,27 @@ implementation
  function IsMyTurn:boolean; // true - значит сейчас ход AI, false - игрока
   begin
    result:=curBoard.whiteTurn xor playerWhite;
+  end;
+
+ procedure PauseAfterThisStage(b:boolean);
+  begin
+   if b then begin
+    stopAfterStage:=stage;
+    LogMessage('Request pause after stage %d',[stage]);
+   end else begin
+    stopAfterStage:=100;
+   end;
+  end;
+
+ function IsPausedAfterStage:boolean;
+  begin
+   result:=pausedAfterStage;
+   if result then begin
+    PauseAI;
+    ASSERT(active.count=0);
+    LogMessage('Really paused');
+    pausedAfterStage:=false;
+   end;
   end;
 
  // оценка позиции (rate - за черных)
@@ -164,7 +187,7 @@ implementation
        // если король под шахом и ход противника - игра проиграна
        KingWhite:begin
         // условие инвертировано
-        if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+305;
+        if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+305;  // останется 5 за короля не под боем
         if beatable[i,j] and Black>0 then flags:=flags or movCheck;
        end;
        KingBlack:begin
@@ -172,14 +195,15 @@ implementation
         if beatable[i,j] and White>0 then flags:=flags or movCheck;
        end;
       end;
-    // Бонус за рокировку
-    if rFlags and $8>0 then wRate:=wRate+0.8;
-    if rFlags and $80>0 then bRate:=bRate+0.8;
-    // Штраф за невозможность рокировки
-    if (rFlags and $8=0) and (rflags and $4>0) then wRate:=wRate-0.3;
-    if (rFlags and $80=0) and (rflags and $40>0) then bRate:=bRate-0.3;
 
-    if gamestage<3 then begin
+    if gamestage<3 then begin // блок оценок, неактуальных в эндшпиле
+     // Бонус за рокировку
+     if rFlags and $8>0 then wRate:=wRate+0.8;
+     if rFlags and $80>0 then bRate:=bRate+0.8;
+     // Штраф за невозможность рокировки
+     if (rFlags and $8=0) and (rflags and $4>0) then wRate:=wRate-0.3;
+     if (rFlags and $80=0) and (rflags and $40>0) then bRate:=bRate-0.3;
+
      // Штраф за невыведенные фигуры
      if GetCell(1,0)=KnightWhite then wRate:=wRate-0.2;
      if GetCell(6,0)=KnightWhite then wRate:=wRate-0.2;
@@ -190,12 +214,14 @@ implementation
      if GetCell(2,7)=BishopBlack then bRate:=bRate-0.2;
      if GetCell(5,7)=BishopBlack then bRate:=bRate-0.2;
      // штраф за гуляющего короля
-     for i:=0 to 7 do
-      for j:=1 to 6 do begin
-       if GetCell(i,j)=KingWhite then wRate:=wRate-sqr(j)*0.05;
-       if GetCell(i,j)=KingBlack then bRate:=bRate-sqr(7-j)*0.05;
-      end;
+     i:=wKingPos and 15;
+     j:=wKingPos shr 4;
+     if (j>0) and (j<7) then wRate:=wRate-j*0.25;
+     i:=bKingPos and 15;
+     j:=bKingPos shr 4;
+     if (j>0) and (j<7) then bRate:=bRate-(7-j)*0.25;
     end;
+
     // штраф за сдвоенные пешки и бонус за захват открытых линий
     for i:=0 to 7 do begin
      n:=0; m:=0; f:=0;
@@ -241,29 +267,25 @@ implementation
      bRate:=bRate-maxBlack;
     end;
 
-    if wRate<5.5 then begin // один король
-     for i:=0 to 7 do
-      for j:=0 to 7 do
-       if GetCell(i,j)=KingWhite then begin
-        x:=i; y:=j;
-        wRate:=wRate-0.2*(abs(i-3.5)+abs(j-3.5));
-       end;
-     for i:=0 to 7 do
-      for j:=0 to 7 do
-       if GetCell(i,j)=KingBlack then
-        bRate:=bRate-0.05*(abs(i-x)+abs(j-y));
+    if wRate<6.5 then begin // у белых один король - держаться поближе к центру и подальше от чёрного короля
+      x:=wKingPos and $F;
+      y:=wKingPos shr 4;
+      wRate:=wRate-0.2*(abs(i-3.5)+abs(j-3.5));
+      i:=bKingPos and $F;
+      j:=bKingPos shr 4;
+      bRate:=bRate-0.15*(abs(i-x)+abs(j-y));
     end;
-    if bRate<5.5 then begin // один король
-     for i:=0 to 7 do
-      for j:=0 to 7 do
-       if GetCell(i,j)=KingBlack then begin
-        x:=i; y:=j;
-        bRate:=bRate-0.2*(abs(i-3.5)+abs(j-3.5));
-       end;
-     for i:=0 to 7 do
-      for j:=0 to 7 do
-       if GetCell(i,j)=KingWhite then
-        wRate:=wRate-0.05*(abs(i-x)+abs(j-y));
+    if bRate<6.5 then begin // у чёрных один король - держаться поближе к центру и подальше от белого короля
+      x:=bKingPos and $F;
+      y:=bKingPos shr 4;
+      bRate:=bRate-0.2*(abs(i-3.5)+abs(j-3.5));
+      i:=wKingPos and $F;
+      j:=wKingPos shr 4;
+      wRate:=wRate-0.15*(abs(i-x)+abs(j-y));
+      if wRate<6 then begin // одни короли - ничья
+       wRate:=1; bRate:=1;
+       flags:=flags or movStalemate;
+      end;
     end;
 
     whiteRate:=wRate;
@@ -342,9 +364,9 @@ implementation
    oldWeight:integer;
   begin
    oldWeight:=data[node].weight;
-   ASSERT((add>0) and (add<16));
+   ASSERT((add>=0) and (add<16));
    inc(data[node].weight,add);
-   ASSERT((data[node].weight>-20) and (data[node].weight<250),'Node: '+inttostr(node));
+   ASSERT((data[node].weight>-20) and (data[node].weight<200),'Node: '+inttostr(node));
    if data[node].firstChild>0 then begin
     node:=data[node].firstChild;
     while node>0 do begin
@@ -483,41 +505,6 @@ implementation
      end;
   end;
 
- // Поток занимается исключительно развитием дерева поиска:
- // - достаёт из кучи позицию с наибольшим весом
- // - строит все возможные варианты продолжения и оценивает полученные позиции; обновляет оценки предков в дереве
- // - заносит в кучу полученные позиции, если они нуждаются в продолжении
- procedure TThinkThread.Execute;
-  var
-   node:integer;
-  begin
-   counter:=0;
-   waitCounter:=0;
-   threadRunning:=true;
-   try
-   repeat
-    if not running then begin // no work to do
-     idle:=true;
-     Sleep(1); continue;
-    end;
-    idle:=false;
-
-    node:=active.Get;
-    if node=0 then begin // список пуст - работы нет
-     inc(waitCounter);
-     Sleep(1);
-     continue;
-    end;
-    ExtendNode(node);
-    inc(counter);
-
-   until terminated;
-   except
-    on e:Exception do ErrorMessage('Error: '+ExceptionMsg(e));
-   end;
-   threadRunning:=false;
-  end;
-
  // Раз в секунду обновляет отображаемый статус AI
  procedure UpdateStats;
   var
@@ -609,14 +596,16 @@ implementation
 
  // Подрезка дерева: удаляются незначимые ветки
  procedure CutTree(node,recursion:integer);
+  const
+   CutThreshold:array[0..4] of single=(0,1000,2000,3000,5000);
   var
-   n,count,next,maxRecursion,deleted:integer;
+   n,count,next,deleted,was:integer;
    min,max,v,tr:single;
    st:string;
   begin
    n:=data[node].firstChild;
    if n<=0 then exit;
-   maxRecursion:=(stage-1) div 2;
+   was:=freeCnt;
    // Вычисляем минимум и максимум
    count:=1;
    min:=data[n].rate;
@@ -633,7 +622,7 @@ implementation
    if (count<4) and (not data[node].whiteTurn xor playerWhite) then exit; // на ходу соперника оставлять минимум 3 варианта
 
    deleted:=0;
-   // а теперь рабочий проход
+   // А теперь рабочий проход
    n:=data[node].firstChild;
    while n>0 do begin
     v:=data[n].rate;
@@ -644,21 +633,25 @@ implementation
        st:=st+data[n].LastTurnAsString+'; ';
        DeleteNode(n);
        inc(deleted);
-     end;
+     end else
+      if data[n].quality>CutThreshold[aiLevel] then
+       CutTree(n,recursion+1);
     end else begin
      // ход игрока: ветки с низкой оценкой - развиваем, с высокой - удаляем
      if v=max then begin
        st:=st+data[n].LastTurnAsString+'; ';
        DeleteNode(n);
        inc(deleted);
-     end;
+     end else
+      if data[n].quality>CutThreshold[aiLevel] then
+       CutTree(n,recursion+1);
     end;
     n:=next;
    end;
    if recursion=0 then begin
     n:=memSize-freeCnt;
-    LogMessage('Tree cut: nodes=%d (%d%%), ch=%d, min=%.3f, max=%.3f :: %s',
-      [n,round(100*n/memSize),count-deleted,min,max,st]);
+    LogMessage('Tree cut: nodes=%d (%d%%), del=%d, ch=%d, min=%.3f, max=%.3f :: %s',
+      [n,round(100*n/memSize),freeCnt-was,count-deleted,min,max,st]);
    end;
   end;
 
@@ -806,12 +799,68 @@ implementation
     LogMessage(st);
     LogMessage(' === AI turn: %s ===',[data[moveReady].LastTurnAsString]);
 
+    startTime:=MyTickCount;
     stage:=1;
     // удаление ненужных веток
     n:=freeCnt;
     DeleteChildrenExcept(curBoardIdx,moveReady);
-    LogMessage('Branches deleted, %d nodes removed',[freeCnt-n]);
+    LogMessage('Branches deleted, %d nodes removed (%d nodes left)',
+     [freeCnt-n,memSize-freeCnt]);
+
+    n:=data[moveReady].firstChild;
+    while n>0 do begin
+     // вывод всех вариантов в лог
+     st:=st+Format(#13#10' %d) %s %.3f (q=%d)',[i,data[n].LastTurnAsString,data[n].rate,round(data[n].quality)]);
+     n:=data[n].nextSibling;
+     inc(i);
+    end;
+    LogMessage('New tree state: '#13#10'%s',[st]);
     exit;
+   end;
+  end;
+
+ procedure UpdateJob;
+  var
+   time:int64;
+  begin
+   time:=MyTickCount;
+   try
+    // Возможные состояния:
+    // 1) нет активных элементов (работа выполнена)
+    // 2) закончилась память
+    if (active.count=0) or (freeCnt<100) then begin
+     RateTree; // без этого - никуда
+
+     if freeCnt<100 then begin // если мало памяти - обрезать дерево
+      active.Clear; // под обрезку могут попасть активные ноды, поэтому быстрее и проще удалить их все а затем добавить заново
+      CutTree(curBoardIdx,0);
+      AddWeight(curBoardIdx,0); // таким образом восстанавливается списко активных нодов
+     end;
+
+     if active.count=0 then begin
+      if not isMyTurn or not TryMakeDecision then begin
+        active.Clear;
+        //VerifyTree;
+        if (stage<25) and (stage<stopAfterStage) then begin
+         inc(stage);
+         ExtendTree(curBoardIdx,0);
+         LogMessage('Stage %d. Nodes to extend: %d',[stage,active.count]);
+         if active.count>60000 then begin
+          Sleep(0); /// TODO: плохо когда фазы длятся дольше 2-3 секунд
+         end;
+        end else
+         if (stage=stopAfterStage) and not (pausedAfterStage) then begin
+          pausedAfterStage:=true;
+          LogMessage('Paused after stage %d',[stage]);
+          ASSERT(active.count=0);
+         end;
+      end;
+     end;
+    end;
+    time:=MyTickCount-time;
+    if time>50 then LogMessage('UpdateJob time %d ms',[time]);
+   except
+    on e:Exception do ErrorMessage('UpdateJob: '+ExceptionMsg(e));
    end;
   end;
 
@@ -822,46 +871,12 @@ implementation
    time:int64;
    c:integer;
   begin
-   if delayedResume>0 then begin
-    dec(delayedResume);
-    if delayedResume=0 then begin
-     ResumeAI;
-     exit;
-    end;
-   end;
    if not started or not running then exit;
-   PauseAI;
    try
-    time:=MyTickCount;
     UpdateStats;
-    // Возможные состояния:
-    // 1) нет активных элементов (работа выполнена)
-    // 2) закончилась память
-    if (active.count=0) or (freeCnt<100) then begin
-     RateTree; // без этого - никуда (осторожно - может занимать многовато времени!)
-
-     if freeCnt<100 then CutTree(curBoardIdx,0);
-
-     if active.count=0 then begin
-      if not isMyTurn or not TryMakeDecision then begin
-        active.Clear;
-        //VerifyTree;
-        if stage<25 then begin
-         inc(stage);
-         ExtendTree(curBoardIdx,0);
-         LogMessage('Nodes to extend: %d',[active.count]);
-        end;
-      end;
-     end;
-    end;
-
-    time:=MyTickCount-time;
-    if time>20 then LogMessage('Timer spent %d ms',[time]);
    except
     on e:Exception do LogMessage('Error in timer: '+ExceptionMsg(e));
    end;
-   if delayedResume=0 then
-    ResumeAI;
   end;
 
  // Игрок сделал ход: значит curBoard уже указывает на одного из потомков дерева поиска
@@ -903,7 +918,8 @@ implementation
        active.Add(newNode);
       end;
     end;
-   delayedResume:=10;
+   startTime:=MyTickCount;
+   ResumeAI;
   end;
 
  // Инициализация AI
@@ -913,6 +929,8 @@ implementation
    sysInfo:TSystemInfo;
   begin
    if started then exit;
+   active.Init;
+
    // Создать потоки
    GetSystemInfo(sysInfo);
    n:=sysInfo.dwNumberOfProcessors;
@@ -921,14 +939,11 @@ implementation
    {$IFDEF SINGLETHREADED}
    n:=1;
    {$ENDIF}
-   //n:=1;
+   n:=1;
    SetLength(threads,n);
-   for i:=0 to high(threads) do begin
-    threads[i]:=TThinkThread.Create;
-    threads[i].id:=i;
-   end;
+   for i:=0 to high(threads) do
+    threads[i]:=TThinkThread.Create(i);
 
-   active.Init;
    LogMessage('AI started');
 
    started:=true;
@@ -994,6 +1009,71 @@ implementation
   begin
    result:=started;
   end;
+
+ { TThinkThread }
+
+ constructor TThinkThread.Create(id: integer);
+  begin
+   self.id:=id;
+   inherited Create;
+  end;
+
+ // Поток занимается развитием дерева поиска:
+ // - достаёт из кучи позицию с наибольшим весом
+ // - строит все возможные варианты продолжения и оценивает полученные позиции; обновляет оценки предков в дереве
+ // - заносит в кучу полученные позиции, если они нуждаются в продолжении
+ procedure TThinkThread.Execute;
+  var
+   node:integer;
+  begin
+   counter:=0;
+   waitCounter:=0;
+   threadRunning:=true;
+   AtomicIncrement(workingThreads);
+   try
+   repeat
+    if not running then begin // no work to do
+     idle:=true;
+     AtomicDecrement(workingThreads);
+     Sleep(5);
+     AtomicIncrement(workingThreads);
+     continue;
+    end;
+    idle:=false;
+
+    // поток с ID=0 - управляющий: если все остальные потоки спят
+    if (id=0) and (workingThreads=1) and (moveReady=0) and
+       ((active.count=0) or (freeCnt<100)) then begin
+      // нет больше активных элементов либо закончилась память
+      idle:=true;
+      PauseAI;
+      idle:=false;
+      UpdateJob;
+      if not pausedAfterStage then ResumeAI;
+      continue;
+     end;
+
+    node:=0;
+    if freeCnt>100 then // если память на исходе - работать нельзя
+     node:=active.Get;
+    if node=0 then begin // список пуст - работы нет
+     inc(waitCounter);
+     AtomicDecrement(workingThreads);
+     Sleep(1);
+     AtomicIncrement(workingThreads);
+     continue;
+    end;
+    ExtendNode(node);
+    inc(counter);
+
+   until terminated;
+   AtomicDecrement(workingThreads);
+   except
+    on e:Exception do ErrorMessage('Error: '+ExceptionMsg(e));
+   end;
+   threadRunning:=false;
+  end;
+
 
 { TBaskets }
 
