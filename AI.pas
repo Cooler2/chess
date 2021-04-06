@@ -374,7 +374,7 @@ implementation
      node:=data[node].nextSibling;
     end;
    end else
-    if (oldWeight<=0) and (data[node].weight>0) then
+    if {(oldWeight<=0) and} (data[node].weight>0) then
      active.Add(node);
   end;
 
@@ -427,11 +427,13 @@ implementation
   var
    time:int64;
   begin
+   VerifyTree;
    time:=MyTickCount;
    if curBoard.firstChild>0 then begin
     curBoard.quality:=curBoard.quality+RateSubtree(curBoardIdx);
    end;
    time:=MyTickCount-time;
+   if time>100 then LogMessage('RateTree time: %d',[time]);
   end;
 
  // Добавляет дочерние узлы для всех возможных продолжений указанной позиции
@@ -477,9 +479,9 @@ implementation
         end;
         inc(cnt);
         // скорректируем вес
-        if flags and movBeat>0 then weight:=weight+5
+        if flags and movCheck>0 then weight:=weight+10 // безусловное продолжение - нужно проверить можно ли уйти из под шаха
         else
-        if flags and movCheck>0 then weight:=weight+10; // безусловное продолжение - нужно проверить можно ли уйти из под шаха
+        if flags and movBeat>0 then weight:=weight+6;
 
         if weight<=0 then continue; // позиция не заслуживает продолжения
        end;
@@ -595,7 +597,7 @@ implementation
 
 
  // Подрезка дерева: удаляются незначимые ветки
- procedure CutTree(node,recursion:integer);
+ function CutTree(node,recursion:integer):integer;
   const
    CutThreshold:array[0..4] of single=(0,1000,2000,3000,5000);
   var
@@ -618,12 +620,13 @@ implementation
     if v>max then max:=v;
     n:=data[n].nextSibling;
    end;
-   if count<2 then exit; // единственная ветка нечего удалять
-   if (count<4) and (not data[node].whiteTurn xor playerWhite) then exit; // на ходу соперника оставлять минимум 3 варианта
 
    deleted:=0;
    // А теперь рабочий проход
    n:=data[node].firstChild;
+   if count<2 then n:=-1; // единственная ветка нечего удалять
+   if (count<4) and (not data[node].whiteTurn xor playerWhite) then n:=-1; // на ходу соперника оставлять минимум 3 варианта
+
    while n>0 do begin
     v:=data[n].rate;
     next:=data[n].nextSibling;
@@ -650,8 +653,9 @@ implementation
    end;
    if recursion=0 then begin
     n:=memSize-freeCnt;
+    result:=freeCnt-was;
     LogMessage('Tree cut: nodes=%d (%d%%), del=%d, ch=%d, min=%.3f, max=%.3f :: %s',
-      [n,round(100*n/memSize),freeCnt-was,count-deleted,min,max,st]);
+      [n,round(100*n/memSize),result,count-deleted,min,max,st]);
    end;
   end;
 
@@ -672,51 +676,48 @@ implementation
  // Продлить перспективные ветви дерева
  // Нужно чтобы каждая новая фаза не продолжалась слишком уж долго,
  // поэтому по мере углубления дерева нужно уменьшать задачу
- procedure ExtendTree(node,recursion:integer);
+ procedure ExtendTree(node,recursion:integer;var outList:PInteger);
   var
    n,count,next,v,boost:integer;
-   p,max,min,q,tr:single;
-   prior:array[0..99] of single;
-   st:string;
+   p,q,max3,max2,max,tr:single;
+   prior:array[0..199] of single;
   begin
    n:=data[node].firstChild;
    if n<=0 then exit;
    // Вычисляем рейтинг веток
-   count:=0; max:=-100000; min:=100000;
+   count:=0; max:=-100000; max2:=-100000; max3:=-1000000;
    while n>0 do begin
     p:=NodePriority(n);
     prior[count]:=p;
-    if p>max then max:=p;
-    if p<min then min:=p;
+    if p>max then begin max3:=max2; max2:=max; max:=p; end
+    else
+     if p>max2 then begin max3:=max2; max2:=p; end
+      else
+       if p>max3 then max3:=p;
     n:=data[n].nextSibling;
     inc(count);
    end;
-   // порог для продвижения - не зависит от качества оценки, однако буст может быть и нулевым
-   tr:=max-(max-min)*(0.2*(recursion+1));
-   st:=#13#10'  :: ';
+   // порог для продвижения - не зависит от качества оценки
+{   tr:=(max+min)/2;
+   repeat
+    n:=0;
+
+   until n<3+recursion;}
    // теперь рабочий проход
    n:=data[node].firstChild;
    while n>0 do begin
-    q:=Clamp(sqrt(data[n].quality),10,500);
     p:=NodePriority(n);
-
-    boost:=Clamp(round(300/q),0,10); // буст может получиться нулевым, но ветка продолжится за счёт рекурсии
-    if p>tr then begin
-     v:=round(boost*(p-tr)/(max-tr)); // чем больше приоритет - тем сильнее продвигать
-     if v>0 then AddWeight(n,v);
-     if recursion=0 then
-      st:=st+Format('%s-%s [%d]; ',[NameCell(data[n].lastTurnFrom),NameCell(data[n].lastTurnTo),v]);
-     if q>100 then // достаточно развитые позиции продлеваем рекурсивно
-      ExtendTree(n,recursion+1);
+    if p>=max2 then begin
+     if data[n].quality<1000 then begin
+      AddWeight(n,10);
+      outList^:=n;
+      inc(outList);
+     end else
+      ExtendTree(n,recursion+1,outList);
     end;
     n:=data[n].nextSibling;
    end;
 
-   if recursion=0 then begin
-    n:=memSize-freeCnt;
-    LogMessage('Stage %d: nodes=%d (%d%%), estCnt=%d, ch=%d %s',
-      [stage,n,round(100*n/memSize),estCounter,count,st]);
-   end;
   end;
 
  // Проверяет достаточно ли собрано информации чтобы сделать ход
@@ -775,9 +776,9 @@ implementation
    // 3. Прочие лимиты
    case aiLevel of
     1:q:=20000;
-    2:q:=50000;
-    3:q:=100000;
-    4:q:=300000;
+    2:q:=30000;
+    3:q:=50000;
+    4:q:=100000;
    end;
    if not result and
      (curBoard.quality>q) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
@@ -819,9 +820,23 @@ implementation
    end;
   end;
 
+ function BuildNodeName(node:integer):string;
+  begin
+   result:=data[node].LastTurnAsString+'('+FloatToStrF(data[node].rate,ffFixed,2,2)+')';
+   while data[node].parent<>curBoardIdx do begin
+    node:=data[node].parent;
+    result:=data[node].LastTurnAsString+'->'+result;
+   end;
+  end;
+
  procedure UpdateJob;
   var
    time:int64;
+   i,n,count:integer;
+   pList,p:PInteger;
+   list:array[0..1023] of integer;
+   st:string;
+   min,max:single;
   begin
    time:=MyTickCount;
    try
@@ -833,7 +848,8 @@ implementation
 
      if freeCnt<100 then begin // если мало памяти - обрезать дерево
       active.Clear; // под обрезку могут попасть активные ноды, поэтому быстрее и проще удалить их все а затем добавить заново
-      CutTree(curBoardIdx,0);
+      if CutTree(curBoardIdx,0)<1000 then
+       TryMakeDecision;
       AddWeight(curBoardIdx,0); // таким образом восстанавливается списко активных нодов
      end;
 
@@ -843,11 +859,26 @@ implementation
         //VerifyTree;
         if (stage<25) and (stage<stopAfterStage) then begin
          inc(stage);
-         ExtendTree(curBoardIdx,0);
-         LogMessage('Stage %d. Nodes to extend: %d',[stage,active.count]);
+         pList:=@list;
+         ExtendTree(curBoardIdx,0,pList);
+         ASSERT(UIntPtr(pList)<UIntPtr(@list[1023]),'Buffer overflow');
+         p:=@list;
+         while UIntPtr(p)<UIntPtr(pList) do begin
+          st:=st+BuildNodeName(p^)+'; ';
+          inc(p);
+          if p=@list[63] then break;
+         end;
+         curBoard.MinMaxRate(min,max);
+
+         n:=memSize-freeCnt;
+         LogMessage('Stage %d. Nodes: %d (%d%%), extend: %d, min=%.3f, max=%.3f'#13#10' Promoted: %s',
+          [stage,n,round(100*n/memSize),active.count,min,max,st]);
          if active.count>60000 then begin
           Sleep(0); /// TODO: плохо когда фазы длятся дольше 2-3 секунд
          end;
+
+         time:=MyTickCount-time;
+         if time>50 then LogMessage('UpdateJob time %d ms',[time]);
         end else
          if (stage=stopAfterStage) and not (pausedAfterStage) then begin
           pausedAfterStage:=true;
@@ -857,8 +888,6 @@ implementation
       end;
      end;
     end;
-    time:=MyTickCount-time;
-    if time>50 then LogMessage('UpdateJob time %d ms',[time]);
    except
     on e:Exception do ErrorMessage('UpdateJob: '+ExceptionMsg(e));
    end;
@@ -871,7 +900,7 @@ implementation
    time:int64;
    c:integer;
   begin
-   if not started or not running then exit;
+   if not started then exit;
    try
     UpdateStats;
    except
@@ -939,7 +968,7 @@ implementation
    {$IFDEF SINGLETHREADED}
    n:=1;
    {$ENDIF}
-   n:=1;
+   //n:=1;
    SetLength(threads,n);
    for i:=0 to high(threads) do
     threads[i]:=TThinkThread.Create(i);

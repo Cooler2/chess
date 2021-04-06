@@ -100,6 +100,7 @@ type
   function ToString:string;
   function LastTurnAsString(short:boolean=true):string;
   procedure UpdateKings;
+  procedure MinMaxRate(out min,max:single);
  end;
 
  TMovesList=array[0..35] of byte; // [0] - number of moves, [1]..[n] - target cell position
@@ -180,7 +181,8 @@ var
  function AddChild(_parent:integer):integer; // allocate new node and make it child
  procedure DeleteNode(node:integer;updateLinks:boolean=true);
  procedure DeleteChildrenExcept(node,childNode:integer); // удалить всех потомков node, кроме childNode
- function CountLeaves(node:integer):integer;
+ function CountLeaves(node:integer):integer; // считает количество всех листьев у ноды
+ function CountNodes(node:integer):integer; // возвращает 1+кол-во всех потомков
  procedure VerifyTree; // проверяет целостность дерева: правильность выделения, отсутствие двойных ссылок
 
  // Операции над доской
@@ -349,8 +351,6 @@ implementation
     _DeleteNode(d,true);
     d:=next;
    end;
-   FreeBoard(node);
-
    if updateLinks then with data[node] do begin
     if prevSibling>0 then data[prevSibling].nextSibling:=nextSibling;
     if nextSibling>0 then data[nextSibling].prevSibling:=prevSibling;
@@ -359,6 +359,7 @@ implementation
      if data[parent].lastChild=node then data[parent].lastChild:=prevSibling;
     end;
    end;
+   FreeBoard(node);
   end;
 
  // Удаление узла из дерева
@@ -431,16 +432,16 @@ implementation
    end;
 
    n:=CountNodes(1);
-   if n+freeCnt+1<>memSize then
-    raise EError.Create('Tree node count doesn''t match');
+  // if n+freeCnt+1<>memSize then // либо дерево содержит освобождённые ноды, либо есть ноды вне дерева
+  //  raise EError.Create('Tree node count doesn''t match');
 
    MarkSubtree(1,data[1].parent);
 
    for i:=1 to high(data) do begin
     if data[i].debug<>0 then inc(data[i].debug);
-    ASSERT(data[i].debug in [0,$DD]);
+    if not (data[i].debug in [0,$DD]) then
+     ASSERT(false,inttostr(i)); // debug=$DE - нода вне дерева, $DC - дважды в дереве
    end;
-
   end;
 
  procedure InitNewGame;
@@ -1027,6 +1028,20 @@ function TBoard.LastTurnAsString;
   if (v=King) and (x=LastTurnFrom and $F-2) then st:='0-0-0';
   if (v=King) and (x=LastTurnFrom and $F+2) then st:='0-0';
   result:=st;
+ end;
+
+procedure TBoard.MinMaxRate(out min, max: single);
+ var
+  d:integer;
+ begin
+  min:=10000; max:=-10000;
+  d:=firstChild;
+  while d>0 do
+   with data[d] do begin
+    if rate<min then min:=rate;
+    if rate>max then max:=rate;
+    d:=nextSibling;
+   end;
  end;
 
 { TSavedTurn }

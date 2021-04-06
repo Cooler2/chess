@@ -594,7 +594,7 @@ begin
  if StartBtn.Down then AiTimer;
 
  if StartBtn.Down then begin
-  if IsAiRunning then
+  if not TreeWnd.Visible then
    status.Panels[1].Text:=AiStatus;
   if (gameState in [1..3]) then begin // остановка AI если игра окончена
    StartBtn.Down:=false;
