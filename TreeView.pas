@@ -205,11 +205,11 @@ procedure DrawTreeNodes(canvas:TCanvas);
        canvas.Font.Color:=$A000B0;
       end else
        st2:='';
-     st3:=FloatToStrF(data[idx].rate,ffFixed,4,3);
+     st3:=FloatToStrF(data[idx].rate,ffFixed,4,2);
      if abs(data[idx].rate)>210 then
        st3:=FloatToStrF(data[idx].rate,ffFixed,4,0);
       st:=NameCell(cell1 and $F,cell1 shr 4)+ch+NameCell(cell2 and $F,cell2 shr 4)+st2+
-       ' '+st3;
+       '  '+st3;
      end else
       st:='   Root';
      canvas.brush.Style:=bsClear;
@@ -247,8 +247,45 @@ end;
 
 procedure TTreeWnd.FormKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
+procedure SelectItem(n:integer);
+ var
+  col,row:integer;
+ begin
+  for col:=1 to high(treeData) do
+   with treeData[col] do
+    for row:=0 to high(items) do
+     if items[row]=n then begin
+      selIdx[col]:=n;
+      selIdx[col+1]:=-1;
+      SetLength(treeData,col+2);
+      mainForm.displayBoard:=n;
+      BuildTree;
+      mainForm.DrawBoard(sender);
+      Invalidate;
+      MainForm.Estimate(true);
+      exit;
+     end;
+ end;
+var
+ n:integer;
 begin
  if key=VK_ESCAPE then Close;
+ if key=VK_UP then begin
+  n:=MainForm.displayBoard;
+  n:=data[n].prevSibling;
+  if n>0 then SelectItem(n);
+ end else
+ if key=VK_DOWN then begin
+  n:=MainForm.displayBoard;
+  n:=data[n].nextSibling;
+  if n>0 then SelectItem(n);
+ end else
+ if key=VK_LEFT then begin
+  n:=MainForm.displayBoard;
+  n:=data[n].parent;
+  if (n>0) and (n<>curBoardIdx) then SelectItem(n);
+ end;
+
 end;
 
 procedure TTreeWnd.FormMouseDown(Sender: TObject; Button: TMouseButton;

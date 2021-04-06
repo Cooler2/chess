@@ -227,9 +227,9 @@ object MainForm: TMainForm
     Height = 21
     Style = csDropDownList
     Anchors = [akTop, akRight]
-    ItemIndex = 1
+    ItemIndex = 0
     TabOrder = 3
-    Text = #1041#1072#1079#1086#1074#1099#1081' '
+    Text = #1059#1087#1088#1086#1097#1077#1085#1085#1099#1081' '
     OnChange = selLevelChange
     Items.Strings = (
       #1059#1087#1088#1086#1097#1077#1085#1085#1099#1081' '
@@ -274,6 +274,19 @@ object MainForm: TMainForm
     Checked = True
     State = cbChecked
     TabOrder = 6
+    OnClick = UpdateOptions
+  end
+  object useOppTimeBtn: TCheckBox
+    Left = 551
+    Top = 528
+    Width = 153
+    Height = 17
+    Hint = #1087#1088#1086#1076#1086#1083#1078#1072#1090#1100' '#1088#1072#1073#1086#1090#1091' '#1074#1086' '#1074#1088#1077#1084#1103' '#1093#1086#1076#1072' '#1087#1088#1086#1090#1080#1074#1085#1080#1082#1072
+    Anchors = [akTop, akRight]
+    Caption = #1080#1089#1087'. '#1074#1088#1077#1084#1103' '#1087#1088#1086#1090#1080#1074#1085#1080#1082#1072
+    Checked = True
+    State = cbChecked
+    TabOrder = 7
     OnClick = UpdateOptions
   end
   object Pieces: TImageList
@@ -7764,6 +7777,16 @@ object MainForm: TMainForm
     object MenuSaveAllTurns: TMenuItem
       Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1074#1089#1077' '#1093#1086#1076#1099' '#1087#1072#1088#1090#1080#1080
       OnClick = MenuSaveAllTurnsClick
+    end
+    object N1: TMenuItem
+      Caption = '-'
+    end
+    object MenuSaveState: TMenuItem
+      Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1089#1086#1089#1090#1086#1103#1085#1080#1077
+      OnClick = MenuSaveStateClick
+    end
+    object MenuLoadState: TMenuItem
+      Caption = #1047#1072#1075#1088#1091#1079#1080#1090#1100' '#1089#1086#1089#1090#1086#1103#1085#1080#1077
     end
   end
   object Timer: TTimer

@@ -7,6 +7,7 @@ interface
   aiLevel:integer; // уровень сложности (1..4) - определяет момент, когда AI принимает решение о готовности хода
   aiSelfLearn:boolean=true; // режим самообучения: пополняет базу оценок позиций в ходе игры
   aiUseDB:boolean=true; // можно ли использовать БД оценок позиций
+  aiUseOpponentTime:boolean=true;
 
   aiStatus:string; // строка состояния работы AI
   moveReady:integer; // готовность хода - индекс выбранной доски продолжения (<=0 - ход не готов). Когда выставляется - AI ставится на паузу
@@ -383,7 +384,7 @@ implementation
  // Возвращает сколько качества нужно прибавить предку
  function RateSubtree(node:integer):single;
   const
-   QUALITY_FADE = 0.6;
+   QUALITY_FADE = 0.5;
   var
    i,d:integer;
    best,v:single;
@@ -427,7 +428,7 @@ implementation
   var
    time:int64;
   begin
-   VerifyTree;
+   // VerifyTree; // только в однопоточном режиме!
    time:=MyTickCount;
    if curBoard.firstChild>0 then begin
     curBoard.quality:=curBoard.quality+RateSubtree(curBoardIdx);
@@ -518,8 +519,9 @@ implementation
    i:=round((time-startTime)/1000);
    if i<>secondsElapsed then begin
     secondsElapsed:=i;
-    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, оценок: %s',
-     [stage,secondsElapsed,FormatInt(memSize-freeCnt),FormatInt(estCounter-startEstCounter)]);
+    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s',
+     [stage,secondsElapsed,FormatInt(memSize-freeCnt),
+       FormatInt(active.count),FormatInt(estCounter-startEstCounter)]);
     // Кол-во оценок в секунду:
 
     if lastStatTime>0 then begin
@@ -577,6 +579,8 @@ implementation
    time:int64;
    node:integer;
   begin
+   if not aiUseOpponentTime and
+      not IsMyTurn then exit;
    time:=MyTickCount;
    stage:=1;
    startTime:=time;
@@ -625,7 +629,10 @@ implementation
    // А теперь рабочий проход
    n:=data[node].firstChild;
    if count<2 then n:=-1; // единственная ветка нечего удалять
-   if (count<4) and (not data[node].whiteTurn xor playerWhite) then n:=-1; // на ходу соперника оставлять минимум 3 варианта
+   if (count<4) and // на ходу соперника оставлять минимум 3 варианта (однако их можно подрезать рекурсивно)
+      (not data[node].whiteTurn xor playerWhite) then begin
+     min:=-10000; max:=10000; // никто не попадёт под это условие
+    end;
 
    while n>0 do begin
     v:=data[n].rate;
@@ -665,9 +672,9 @@ implementation
    with data[n] do begin
     if abs(rate)<200 then begin
      if whiteTurn xor playerWhite then
-      result:=20-10*rate-sqrt(quality)*0.01 // ход игрока: развивать оценки с низкой оценкой
+      result:=20-10*rate-sqrt(quality)*0.05 // ход игрока: развивать оценки с низкой оценкой
      else
-      result:=20+10*rate-sqrt(quality)*0.01; // ход AI: развивать оценки с высокой оценкой
+      result:=20+10*rate-sqrt(quality)*0.05; // ход AI: развивать оценки с высокой оценкой
     end else
      result:=-100;
    end;
@@ -714,7 +721,14 @@ implementation
       inc(outList);
      end else
       ExtendTree(n,recursion+1,outList);
-    end;
+    end else // безусловно развить все ветки 1-го уровня, если они совсем слабо развиты
+     if (recursion=0) and
+        (data[n].quality<30) then begin
+      AddWeight(n,15);
+      outList^:=n;
+      inc(outList);
+     end;
+
     n:=data[n].nextSibling;
    end;
 
@@ -775,8 +789,8 @@ implementation
 
    // 3. Прочие лимиты
    case aiLevel of
-    1:q:=20000;
-    2:q:=30000;
+    1:q:=10000;
+    2:q:=25000;
     3:q:=50000;
     4:q:=100000;
    end;
@@ -798,16 +812,19 @@ implementation
      inc(i);
     end;
     LogMessage(st);
-    LogMessage(' === AI turn: %s ===',[data[moveReady].LastTurnAsString]);
+    LogMessage(#13#10' -----===== AI turn: %s =====----- ',[data[moveReady].LastTurnAsString]);
+    LogMessage('Time: %.1f, est=%d',[(MyTickCount-startTime)/1000,estCounter-startEstCounter]);
 
     startTime:=MyTickCount;
-    stage:=1;
+    startEstCounter:=estCounter;
+    stage:=0;
     // удаление ненужных веток
     n:=freeCnt;
     DeleteChildrenExcept(curBoardIdx,moveReady);
     LogMessage('Branches deleted, %d nodes removed (%d nodes left)',
      [freeCnt-n,memSize-freeCnt]);
 
+    st:=''; i:=1;
     n:=data[moveReady].firstChild;
     while n>0 do begin
      // вывод всех вариантов в лог
@@ -843,22 +860,28 @@ implementation
     // Возможные состояния:
     // 1) нет активных элементов (работа выполнена)
     // 2) закончилась память
-    if (active.count=0) or (freeCnt<100) then begin
-     RateTree; // без этого - никуда
+    RateTree; // без этого - никуда
 
-     if freeCnt<100 then begin // если мало памяти - обрезать дерево
+    if freeCnt<200 then begin // если мало памяти - обрезать дерево
       active.Clear; // под обрезку могут попасть активные ноды, поэтому быстрее и проще удалить их все а затем добавить заново
-      if CutTree(curBoardIdx,0)<1000 then
-       TryMakeDecision;
+      if CutTree(curBoardIdx,0)<1000 then begin
+       if not TryMakeDecision then begin
+        //LogMessage('');
+{        PauseAI;
+        exit;}
+       end;
+      end;
       AddWeight(curBoardIdx,0); // таким образом восстанавливается списко активных нодов
-     end;
+      LogMessage('Active after cut: %d',[active.count]);
+    end;
 
-     if active.count=0 then begin
+    if active.count=0 then begin
       if not isMyTurn or not TryMakeDecision then begin
         active.Clear;
         //VerifyTree;
         if (stage<25) and (stage<stopAfterStage) then begin
          inc(stage);
+         if stage=1 then LogMessage('Start thinking: stage 1. CurNode children %d',[CountNodes(curBoardIdx)]);
          pList:=@list;
          ExtendTree(curBoardIdx,0,pList);
          ASSERT(UIntPtr(pList)<UIntPtr(@list[1023]),'Buffer overflow');
@@ -871,8 +894,8 @@ implementation
          curBoard.MinMaxRate(min,max);
 
          n:=memSize-freeCnt;
-         LogMessage('Stage %d. Nodes: %d (%d%%), extend: %d, min=%.3f, max=%.3f'#13#10' Promoted: %s',
-          [stage,n,round(100*n/memSize),active.count,min,max,st]);
+         LogMessage('Stage %d. Nodes: %d (%d%%), extend: %d, min=%.3f, max=%.3f, est=%d'#13#10' Promoted: %s',
+          [stage,n,round(100*n/memSize),active.count,min,max,estCounter-startEstCounter,st]);
          if active.count>60000 then begin
           Sleep(0); /// TODO: плохо когда фазы длятся дольше 2-3 секунд
          end;
@@ -885,27 +908,18 @@ implementation
           LogMessage('Paused after stage %d',[stage]);
           ASSERT(active.count=0);
          end;
-      end;
+       end;
      end;
-    end;
    except
     on e:Exception do ErrorMessage('UpdateJob: '+ExceptionMsg(e));
    end;
   end;
 
  // Таймер вызывается из главного потока.
- // Он приостанавливает AI, анализирует положение и вносит корректировки для продолжения работы
  procedure AiTimer;
-  var
-   time:int64;
-   c:integer;
   begin
    if not started then exit;
-   try
-    UpdateStats;
-   except
-    on e:Exception do LogMessage('Error in timer: '+ExceptionMsg(e));
-   end;
+   UpdateStats;
   end;
 
  // Игрок сделал ход: значит curBoard уже указывает на одного из потомков дерева поиска
@@ -914,6 +928,7 @@ implementation
   var
    cnt,x,y,i,n,k,cellFrom,color,newNode:integer;
    moves:TMovesList;
+   st:string;
   begin
    if not started then exit;
    ASSERT(running=false);
@@ -923,7 +938,7 @@ implementation
    cnt:=FreeCnt-cnt;
    LogMessage('Deleting branches: %d nodes freed',[cnt]);
    active.Clear;
-   stage:=1;
+   stage:=0;
    // Нужно убедиться, что в дереве есть все возможные ходы, т.к. какие-то ветки могли быть удалены при обрезке дерева
    if curBoard.whiteTurn then color:=White else color:=Black;
    for x:=0 to 7 do
@@ -945,9 +960,22 @@ implementation
        end;
        data[newNode].weight:=BaseWeight-10;
        active.Add(newNode);
+       st:=st+data[newNode].LastTurnAsString+'; ';
       end;
     end;
+   if st<>'' then LogMessage('Missing nodes added: '+st);
+
+   LogMessage('Time: %.1f, est=%d',[(MyTickCount-startTime)/1000,estCounter-startEstCounter]);
+   st:=''; i:=1;
+   n:=curBoard.firstChild;
+   while n>0 do begin
+    st:=st+Format(#13#10' %d) %s %.3f (q=%d)',[i,data[n].LastTurnAsString,data[n].rate,round(data[n].quality)]);
+    inc(i);
+    n:=data[n].nextSibling;
+   end;
+   LogMessage('Tree state after turn: '+st);
    startTime:=MyTickCount;
+   startEstCounter:=estCounter;
    ResumeAI;
   end;
 
@@ -958,6 +986,7 @@ implementation
    sysInfo:TSystemInfo;
   begin
    if started then exit;
+   moveReady:=0;
    active.Init;
 
    // Создать потоки
@@ -968,12 +997,12 @@ implementation
    {$IFDEF SINGLETHREADED}
    n:=1;
    {$ENDIF}
-   //n:=1;
+   n:=1;
    SetLength(threads,n);
    for i:=0 to high(threads) do
     threads[i]:=TThinkThread.Create(i);
 
-   LogMessage('AI started');
+   LogMessage('AI started with %d threads',[n]);
 
    started:=true;
    StartThinking;
@@ -1072,7 +1101,7 @@ implementation
 
     // поток с ID=0 - управляющий: если все остальные потоки спят
     if (id=0) and (workingThreads=1) and (moveReady=0) and
-       ((active.count=0) or (freeCnt<100)) then begin
+       ((active.count=0) or (freeCnt<=100)) then begin
       // нет больше активных элементов либо закончилась память
       idle:=true;
       PauseAI;

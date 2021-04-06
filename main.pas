@@ -49,6 +49,10 @@ type
     LibEnableBtn: TCheckBox;
     useDbBtn: TCheckBox;
     selfLearnBtn: TCheckBox;
+    N1: TMenuItem;
+    MenuSaveState: TMenuItem;
+    MenuLoadState: TMenuItem;
+    useOppTimeBtn: TCheckBox;
     procedure DrawBoard(Sender: TObject);
     procedure PBoxMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
@@ -78,6 +82,7 @@ type
     procedure UpdateOptions(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormCreate(Sender: TObject);
+    procedure MenuSaveStateClick(Sender: TObject);
   private
     { Private declarations }
   public
@@ -278,7 +283,6 @@ begin
  AssignFile(f,OpenD.filename);
  Reset(f);
  InitNewGame;
- displayBoard:=curBoardIdx;
  while not eof(f) do begin
   readln(f,st);
   if st<>'' then AddString(sa,st);
@@ -296,11 +300,18 @@ begin
    AddLastTurnNote;
   end;
  end;
+ displayBoard:=curBoardIdx;
  undoBtn.enabled:=curBoard.parent>=0;
  redobtn.enabled:=false;
  UpdateCurPlrBtn;
 
  DrawBoard(sender);
+end;
+
+procedure TMainForm.MenuSaveStateClick(Sender: TObject);
+begin
+ PauseAI;
+
 end;
 
 procedure TMainForm.NowTurnGroupClick(Sender: TObject);
@@ -449,7 +460,7 @@ begin
        curBoard:=@data[curBoardIdx];
        DoMove(curBoard^,curPiecePos,cell);
       end;
-      LogMessage(' === Player turn: %s ===',[curBoard.LastTurnAsString]);
+      LogMessage(#13#10'  -----===== Player turn: %s =====-----',[curBoard.LastTurnAsString]);
       onTurnMade;
      end;
     end;
@@ -483,6 +494,7 @@ begin
  useLibrary:=LibEnableBtn.checked;
  aiUseDB:=useDbBtn.Checked;
  aiSelfLearn:=selfLearnBtn.Checked;
+ aiUseOpponentTime:=useOppTimeBtn.Checked;
 end;
 
 procedure TMainForm.selLevelChange(Sender: TObject);
@@ -784,8 +796,8 @@ begin
   status.Panels[0].text:=Format('%5.3f : %5.3f = %4.3f',[whiteRate,blackRate,r]);
 
   if showExtraStatus then
-   status.Panels[1].text:=Format('w=%d flags=%x rF=%x q=%d depth=%d',
-     [weight,flags,rFlags,round(quality),depth]);
+   status.Panels[1].text:=Format('w=%d flags=%x rF=%x q=%d depth=%d sub=%d',
+     [weight,flags,rFlags,round(quality),depth,CountNodes(i)]);
  end;
 
  if displayBoard<>curBoardIdx then exit;
