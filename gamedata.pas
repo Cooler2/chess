@@ -174,6 +174,7 @@ var
 
  // статистика
  spinCounter:int64;
+ testNode:integer; // для ассертов
 
  // Search tree operations
  // ----
@@ -372,13 +373,24 @@ implementation
 
  procedure DeleteChildrenExcept(node,childNode:integer);
   var
-   next:integer;
+   orig,next:integer;
   begin
+   orig:=node;
    node:=data[node].firstChild;
    while (node>0) do begin
     next:=data[node].nextSibling;
     if node<>childNode then DeleteNode(node);
     node:=next;
+   end;
+   with data[orig] do
+   if firstChild>0 then begin
+    ASSERT(firstChild=childNode);
+    ASSERT(lastChild=childNode);
+    ASSERT(data[childNode].prevSibling=0);
+    ASSERT(data[childNode].nextSibling=0);
+   end else begin
+    ASSERT(firstChild=0);
+    ASSERT(lastChild=0);
    end;
   end;
 
@@ -408,10 +420,11 @@ implementation
    end;
   end;
 
-
- procedure VerifyTree; // проверяет целостность дерева: правильность выделения, отсутствие двойных ссылок
+ // Проверяет целостность дерева: правильность выделения, отсутствие двойных ссылок
+ // Вызывать только при остановленных потоках AI
+ procedure VerifyTree;
   var
-   i,n:integer;
+   i,n,p,d:integer;
   procedure MarkSubtree(node,parent:integer);
    begin
     ASSERT(data[node].debug=$DD);
@@ -425,6 +438,40 @@ implementation
     end;
    end;
   begin
+   // проверка ствола дерева
+   n:=curBoardIdx;
+   i:=curBoard.depth;
+   p:=n;
+   while n>1 do begin
+    testNode:=n;
+    ASSERT(data[n].nextSibling=0);
+    p:=n;
+    n:=data[n].parent;
+    ASSERT(data[n].depth=i-1);
+    dec(i);
+    ASSERT(data[n].firstChild=p);
+    ASSERT(data[n].lastChild=p);
+   end;
+
+   d:=curBoard.depth;
+   // Проверка иерархии
+   for i:=2 to high(data) do
+    if data[i].debug<>0 then
+     with data[i] do begin
+      testNode:=i;
+      ASSERT(parent>0);
+      ASSERT(data[parent].depth=depth-1);
+      if depth<d then begin
+       // ствол дерева
+       ASSERT(nextSibling=0);
+       ASSERT(prevSibling=0);
+       ASSERT(firstChild>0);
+       ASSERT(data[firstChild].parent=i);
+       ASSERT(data[firstChild].depth=depth+1);
+       ASSERT(lastChild=firstChild);
+      end;
+     end;
+
    for i:=1 to high(freeList)-1 do begin
     n:=freeList[i];
     if (i<freeCnt) and (data[n].debug<>0) then
@@ -438,6 +485,7 @@ implementation
    MarkSubtree(1,data[1].parent);
 
    for i:=1 to high(data) do begin
+    testNode:=i;
     if data[i].debug<>0 then inc(data[i].debug);
     if not (data[i].debug in [0,$DD]) then
      ASSERT(false,inttostr(i)); // debug=$DE - нода вне дерева, $DC - дважды в дереве

@@ -137,7 +137,6 @@ object MainForm: TMainForm
     Font.Style = [fsBold]
     ParentFont = False
     OnClick = StartBtnClick
-    ExplicitLeft = 517
   end
   object ClearBtn: TSpeedButton
     Left = 549

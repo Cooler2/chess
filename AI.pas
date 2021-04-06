@@ -704,12 +704,7 @@ implementation
     n:=data[n].nextSibling;
     inc(count);
    end;
-   // порог для продвижения - не зависит от качества оценки
-{   tr:=(max+min)/2;
-   repeat
-    n:=0;
 
-   until n<3+recursion;}
    // теперь рабочий проход
    n:=data[node].firstChild;
    while n>0 do begin
@@ -724,7 +719,7 @@ implementation
     end else // безусловно развить все ветки 1-го уровня, если они совсем слабо развиты
      if (recursion=0) and
         (data[n].quality<30) then begin
-      AddWeight(n,15);
+      AddWeight(n,10);
       outList^:=n;
       inc(outList);
      end;
@@ -737,12 +732,15 @@ implementation
  // Проверяет достаточно ли собрано информации чтобы сделать ход
  // Возвращает true если ход сделан
  function TryMakeDecision:boolean;
+  const
+   subQual:array[1..4] of single=(200,300,500,1000);
   var
    q,max:single;
    st:string;
    i,n,best:integer;
    fl:boolean;
   begin
+   ASSERT(IsMyTurn);
    ASSERT(curBoard.firstChild>0);
    result:=false;
    n:=memSize-freeCnt;
@@ -773,7 +771,8 @@ implementation
    end;
 
    // Единственный ход с высокой оценкой?
-   if not result then begin
+   if not result and
+      (data[best].quality>subQual[aiLevel]) then begin
     n:=curBoard.firstChild;
     fl:=true;
     while n>0 do begin
@@ -795,6 +794,7 @@ implementation
     4:q:=100000;
    end;
    if not result and
+     (data[best].quality>subQual[aiLevel]) and
      (curBoard.quality>q) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
     moveReady:=best;
     result:=true;
@@ -813,7 +813,8 @@ implementation
     end;
     LogMessage(st);
     LogMessage(#13#10' -----===== AI turn: %s =====----- ',[data[moveReady].LastTurnAsString]);
-    LogMessage('Time: %.1f, est=%d',[(MyTickCount-startTime)/1000,estCounter-startEstCounter]);
+    LogMessage('Time: %.1f, est=%d, q=%d',
+     [(MyTickCount-startTime)/1000,estCounter-startEstCounter,round(data[moveReady].quality)]);
 
     startTime:=MyTickCount;
     startEstCounter:=estCounter;
@@ -832,7 +833,7 @@ implementation
      n:=data[n].nextSibling;
      inc(i);
     end;
-    LogMessage('New tree state: '#13#10'%s',[st]);
+    LogMessage('New tree state (depth=%d, id=%d): %s',[data[n].depth,n,st]);
     exit;
    end;
   end;
@@ -864,13 +865,9 @@ implementation
 
     if freeCnt<200 then begin // если мало памяти - обрезать дерево
       active.Clear; // под обрезку могут попасть активные ноды, поэтому быстрее и проще удалить их все а затем добавить заново
-      if CutTree(curBoardIdx,0)<1000 then begin
-       if not TryMakeDecision then begin
-        //LogMessage('');
-{        PauseAI;
-        exit;}
-       end;
-      end;
+      CutTree(curBoardIdx,0);
+      if IsMyTurn then  // После обрезки пробуем сделать ход не дожидаясь завершения фазы: раз память заполнена, возможно данных достаточно
+       if TryMakeDecision then exit;
       AddWeight(curBoardIdx,0); // таким образом восстанавливается списко активных нодов
       LogMessage('Active after cut: %d',[active.count]);
     end;
@@ -932,6 +929,7 @@ implementation
   begin
    if not started then exit;
    ASSERT(running=false);
+   LogMessage('PlayerMadeTurn %s, depth=%d',[curBoard.LastTurnAsString,curBoard.depth]);
    // удаление ненужных веток
    cnt:=freeCnt;
    DeleteChildrenExcept(curBoard.parent,curBoardIdx);

@@ -155,6 +155,21 @@ begin
   AiPerfTest;
   Status.Panels[1].Text:='';
  end;
+ if (key=VK_F5) and IsAiStarted then begin
+  if IsAIRunning then begin
+   LogMessage('F5: Pausing AI');
+   PauseAI;
+   Status.Panels[1].Text:='AI paused. Verifying tree...';
+   Application.ProcessMessages;
+   VerifyTree;
+   Status.Panels[1].Text:='Paused. Verified.';
+   LogMessage('AI Paused');
+  end else begin
+   LogMessage('F5: Resuming AI');
+   Status.Panels[1].Text:='AI resume';
+   ResumeAI;
+  end;
+ end;
 end;
 
 procedure TMainForm.LibBtnMouseDown(Sender: TObject; Button: TMouseButton;
@@ -540,7 +555,7 @@ end;
 
 procedure TMainForm.ShowTreeBtnClick(Sender: TObject);
 begin
- if StartBtn.Down then begin
+ if StartBtn.Down and IsAiRunning then begin
   PauseAfterThisStage(true);
   status.Panels[0].Text:='Waiting...';
   repeat
