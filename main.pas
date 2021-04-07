@@ -52,7 +52,7 @@ type
     N1: TMenuItem;
     MenuSaveState: TMenuItem;
     MenuLoadState: TMenuItem;
-    useOppTimeBtn: TCheckBox;
+    multithreadedModeBtn: TCheckBox;
     procedure DrawBoard(Sender: TObject);
     procedure PBoxMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
@@ -158,16 +158,27 @@ begin
  if (key=VK_F5) and IsAiStarted then begin
   if IsAIRunning then begin
    LogMessage('F5: Pausing AI');
-   PauseAI;
-   Status.Panels[1].Text:='AI paused. Verifying tree...';
-   Application.ProcessMessages;
-   VerifyTree;
-   Status.Panels[1].Text:='Paused. Verified.';
-   LogMessage('AI Paused');
+   globalLock.Enter;
+   try
+    PauseAI;
+    Status.Panels[1].Text:='AI paused. Verifying tree...';
+    Application.ProcessMessages;
+    VerifyTree;
+    Status.Panels[1].Text:='Paused. Verified.';
+    LogMessage('AI Paused');
+   finally
+    globalLock.Leave;
+   end;
   end else begin
    LogMessage('F5: Resuming AI');
    Status.Panels[1].Text:='AI resume';
-   ResumeAI;
+   globalLock.Enter;
+   try
+    VerifyTree;
+    ResumeAI;
+   finally
+    globalLock.Leave;
+   end;
   end;
  end;
 end;
@@ -326,7 +337,6 @@ end;
 procedure TMainForm.MenuSaveStateClick(Sender: TObject);
 begin
  PauseAI;
-
 end;
 
 procedure TMainForm.NowTurnGroupClick(Sender: TObject);
@@ -463,20 +473,25 @@ begin
          exit;
         end;
       // Ход можно делать
-      PauseAI;
-      // нет ли уже в дереве соответствующего продолжения
-      i:=curBoard.HasChild(curPiecePos,cell);
-      if i>0 then begin
-       curBoardIdx:=i;
-       curBoard:=@data[curBoardIdx];
-      end else begin
-       // если нет - создать его
-       curBoardIdx:=AddChild(curBoardIdx);
-       curBoard:=@data[curBoardIdx];
-       DoMove(curBoard^,curPiecePos,cell);
+      globalLock.Enter;
+      try
+       PauseAI;
+       // нет ли уже в дереве соответствующего продолжения
+       i:=curBoard.HasChild(curPiecePos,cell);
+       if i>0 then begin
+        curBoardIdx:=i;
+        curBoard:=@data[curBoardIdx];
+       end else begin
+        // если нет - создать его
+        curBoardIdx:=AddChild(curBoardIdx);
+        curBoard:=@data[curBoardIdx];
+        DoMove(curBoard^,curPiecePos,cell);
+       end;
+       LogMessage(#13#10'  -----===== Player turn: %s =====-----',[curBoard.LastTurnAsString]);
+       onTurnMade;
+      finally
+       globalLock.Leave;
       end;
-      LogMessage(#13#10'  -----===== Player turn: %s =====-----',[curBoard.LastTurnAsString]);
-      onTurnMade;
      end;
     end;
    end;
@@ -509,7 +524,7 @@ begin
  useLibrary:=LibEnableBtn.checked;
  aiUseDB:=useDbBtn.Checked;
  aiSelfLearn:=selfLearnBtn.Checked;
- aiUseOpponentTime:=useOppTimeBtn.Checked;
+ aiMultithreadedMode:=multithreadedModeBtn.Checked;
 end;
 
 procedure TMainForm.selLevelChange(Sender: TObject);

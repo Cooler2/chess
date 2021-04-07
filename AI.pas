@@ -7,20 +7,20 @@ interface
   aiLevel:integer; // уровень сложности (1..4) - определяет момент, когда AI принимает решение о готовности хода
   aiSelfLearn:boolean=true; // режим самообучения: пополняет базу оценок позиций в ходе игры
   aiUseDB:boolean=true; // можно ли использовать БД оценок позиций
-  aiUseOpponentTime:boolean=true;
+  aiMultithreadedMode:boolean=true;
 
   aiStatus:string; // строка состояния работы AI
   moveReady:integer; // готовность хода - индекс выбранной доски продолжения (<=0 - ход не готов). Когда выставляется - AI ставится на паузу
 
- // Все эти процедуры вызываются только из главного потока
- procedure StartAI;
- procedure PauseAI;
- procedure ResumeAI;
- procedure StopAI;
- procedure PauseAfterThisStage(b:boolean);
- function IsPausedAfterStage:boolean;
+ // Все эти процедуры вызываются из главного потока
+ procedure StartAI; // Обнуляет рабочие данные и запускает AI в фоновых потоках
+ procedure PauseAI;  // Переводит потоки AI в состояние ожидания. После этого можно изучать дерево.
+ procedure ResumeAI; // Выводит потоки AI из состояния ожидания в рабочее состояние.
+ procedure StopAI; // Останавливает и удаляет потоки.
+ procedure PauseAfterThisStage(b:boolean); // запрос паузы AI после завершения текущей фазы (чтобы видеть дерево не в промежуточном состоянии)
+ function IsPausedAfterStage:boolean; // true - AI встал на паузу после завершения фазы согласно запросу
  procedure AiTimer; // необходимо вызывать регулярно не менее 20 раз в секунду. Переключает режим работы AI
- procedure PlayerMadeTurn; // сообщает AI о том, что игрок сделал ход (вызывается в приостановленном состоянии)
+ procedure PlayerMadeTurn; // сообщает AI о том, что игрок сделал ход (вызывать в состоянии паузы)
  procedure AiPerfTest; // запустить тест производительности функций
 
  function IsAiStarted:boolean;
@@ -41,18 +41,22 @@ implementation
   bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 250);
 
  type
+  // Корзина - содержит элементы с одинаковым приоритетом
   TBasket=record
    first,last:integer;
   end;
+  // Реализация приоритетной очереди, используемой для обхода/построения дерева поиска в ширину
+  // Представляет собой массив корзин - односвязных списков, содержащих элементы с одинаковым приоритетом
+  // Это позволяет выполнять операции Add/Get в среднем за O(1)
   TBaskets=record
-   links:array of integer;
+   links:array of integer; // связи (односвязный список)
    baskets:array[0..127] of TBasket; // weight должен быть в этих пределах
    lock:NativeInt;
    lastBasket:integer;
    count:integer;
    procedure Init;
    procedure Clear;
-   // Нельзя добавлять элемент дважды!
+   // Нельзя добавлять один и тот же элемент дважды!
    procedure Add(b:integer); overload;
    procedure Add(boards:PInteger;count:integer); overload;
    function Get:integer;
@@ -60,6 +64,7 @@ implementation
    procedure InternalAdd(idx:integer); inline;
   end;
 
+  // Поток AI
   TThinkThread=class(TThread)
    id:integer;
    threadRunning,idle:boolean;
@@ -80,7 +85,7 @@ implementation
   // рабочие потоки
   threads:array of TThinkThread;
   workingThreads:NativeInt;
-  // список активных листьев
+  // список активных листьев - приоритетная очередь
   active:TBaskets;
 
   stopAfterStage:integer=50; // запрос остановки поиска после фазы
@@ -158,8 +163,8 @@ implementation
     j:=data[j].parent;
    end;
 
-   // Оценка уже есть в кэше?
-{   if not noCache then
+{   // Оценка уже есть в кэше?
+   if not noCache then
     if GetCachedRate(b^,hash) then begin
       IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: избавиться)
       exit;
@@ -299,7 +304,7 @@ implementation
 
     // сохранить вычисленную оценку в кэше
     if not noCache then
-     CacheBoardRate(hash,rate);
+     CacheBoardRate(hash,rate,boardIdx);
 
     if PlayerWhite then rate:=-rate;
    end;
@@ -511,7 +516,7 @@ implementation
  // Раз в секунду обновляет отображаемый статус AI
  procedure UpdateStats;
   var
-   i:integer;
+   i,est:integer;
    time:int64;
   begin
    // Статистика
@@ -519,11 +524,12 @@ implementation
    i:=round((time-startTime)/1000);
    if i<>secondsElapsed then begin
     secondsElapsed:=i;
-    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s',
+    est:=estCounter-startEstCounter;
+    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s, кэш: %.1f%%',
      [stage,secondsElapsed,FormatInt(memSize-freeCnt),
-       FormatInt(active.count),FormatInt(estCounter-startEstCounter)]);
-    // Кол-во оценок в секунду:
+       FormatInt(active.count),FormatInt(est),100*cacheHit/(est+1)]);
 
+    // Кол-во оценок в секунду:
     if lastStatTime>0 then begin
      i:=1000*(estCounter-lastEstCounter) div (time-lastStatTime);
      if i>0 then LogMessage('Rate: %d positions/sec',[i]);
@@ -562,10 +568,10 @@ implementation
   begin
    // базовый начальный вес
    case aiLevel of
-    1:result:=25;
-    2:result:=28;
-    3:result:=31;
-    4:result:=34;
+    1:result:=28;
+    2:result:=32;
+    3:result:=34;
+    4:result:=38;
     else
      raise EWarning.Create('Bad AI level');
    end;
@@ -579,10 +585,9 @@ implementation
    time:int64;
    node:integer;
   begin
-   if not aiUseOpponentTime and
-      not IsMyTurn then exit;
    time:=MyTickCount;
    stage:=1;
+   cacheMiss:=0; cacheHit:=0;
    startTime:=time;
    secondsElapsed:=-1;
    startEstCounter:=estCounter;
@@ -818,6 +823,7 @@ implementation
 
     startTime:=MyTickCount;
     startEstCounter:=estCounter;
+    cacheMiss:=0; cacheHit:=0;
     stage:=0;
     // удаление ненужных веток
     n:=freeCnt;
@@ -973,6 +979,7 @@ implementation
    end;
    LogMessage('Tree state after turn: '+st);
    startTime:=MyTickCount;
+   cacheMiss:=0; cacheHit:=0;
    startEstCounter:=estCounter;
    ResumeAI;
   end;
@@ -995,7 +1002,7 @@ implementation
    {$IFDEF SINGLETHREADED}
    n:=1;
    {$ENDIF}
-   n:=1;
+   if not aiMultiThreadedMode then n:=1;
    SetLength(threads,n);
    for i:=0 to high(threads) do
     threads[i]:=TThinkThread.Create(i);
@@ -1018,6 +1025,7 @@ implementation
    end;
    if running then exit;
    running:=true;
+   //LogMessage('resumed');
   end;
 
  procedure PauseAI;
@@ -1038,6 +1046,7 @@ implementation
      break;
    until false;
    Sleep(0);
+   //LogMessage('paused');
   end;
 
  procedure StopAI;
@@ -1101,11 +1110,21 @@ implementation
     if (id=0) and (workingThreads=1) and (moveReady=0) and
        ((active.count=0) or (freeCnt<=100)) then begin
       // нет больше активных элементов либо закончилась память
-      idle:=true;
-      PauseAI;
-      idle:=false;
-      UpdateJob;
-      if not pausedAfterStage then ResumeAI;
+      globalLock.Enter;
+      try
+       idle:=true;
+       PauseAI;
+       idle:=false;
+       UpdateJob;
+       if not pausedAfterStage then ResumeAI;
+      finally
+       globalLock.Leave;
+      end;
+      if stage>=10 then Sleep(10);
+      if freeCnt<=100 then begin
+       LogMessage('Nothing to cut -> sleep');
+       Sleep(500);
+      end;
       continue;
      end;
 

@@ -1,6 +1,8 @@
 ﻿// Константы, типы, глобальные данные и операции над ними
+//{$DEFINE CHECK_HASH}
 unit gamedata;
 interface
+uses Apus.MyServis;
 const
  Pawn   = 1;
  Rook   = 2;
@@ -51,7 +53,7 @@ const
  memSize = 12000000;
  {$ELSE}
  //memSize =  8000000;
- memSize =  1500000; // временно уменьшено
+ memSize =  4500000; // временно уменьшено
  {$ENDIF}
 
  // Размер кэша оценок
@@ -59,8 +61,10 @@ const
  cacheSize=$1000000; //  16M элементов - 256M памяти
  cacheMask= $FFFFFF;
  {$ELSE}
- cacheSize=$800000; //  8M элементов - 128M памяти
- cacheMask=$7FFFFF;
+ //cacheSize=$1000000; //  16M элементов - 256M памяти
+ //cacheMask= $FFFFFF;
+ cacheSize=$1000000; //  1M элементов - 256M памяти
+ cacheMask= $FFFFFF;
  {$ENDIF}
 
 type
@@ -88,6 +92,9 @@ type
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
   debug:byte;
+  {$IFDEF CHECK_HASH}
+  hash:int64;
+  {$ENDIF}
   procedure Clear;
   function CellIsEmpty(x,y:integer):boolean; inline;
   function CellOccupied(x,y:integer):boolean; inline;
@@ -125,6 +132,7 @@ type
   flags:byte; // флаги (рокировки) оцененноё позиции
   quality:byte; // показатель качества оценки
   extra:word; // дополнительное поле, например для обнаружения хэш-коллизий
+  idx:integer;
  end;
 
  // Сохранённый ход
@@ -149,6 +157,7 @@ var
  freeCnt:NativeInt; // кол-во свободных элементов в списке
  dataLocker:NativeInt; // блокировка дерева (а также связанных с ним структур)
  totalLeafCount:NativeInt; // общее количество листьев в дереве поиска
+ globalLock:TMyCriticalSection;
 
  // Текущее состояние игры
  gameState:byte; // 0 - игра, 1 - пат, 2 - мат белым, 3 - мат черным, 4 - пауза
@@ -170,7 +179,7 @@ var
  // Кэш влияет лишь на скорость оценочной функции, причём незначительно, но чем ближе к эндшпилю - тем сильнее.
  // Однако несовершенство хэш-функции может приводить к ошибкам в оценке.
  cache:array[0..cachesize-1] of TCacheItem;
- cacheMiss,cacheHit:integer;
+ cacheMiss,cacheHit:NativeInt;
 
  // статистика
  spinCounter:int64;
@@ -199,7 +208,7 @@ var
  function BoardHash(var b:TBoard):int64;
 
  function GetCachedRate(var b:TBoard;out hash:int64):boolean;
- procedure CacheBoardRate(hash:int64;rate:single);
+ procedure CacheBoardRate(hash:int64;rate:single;node:integer);
 
  // Вспомогательные функции
  // ---
@@ -226,7 +235,7 @@ var
  procedure UpdateCacheWithRates;
 
 implementation
- uses Apus.MyServis,SysUtils;
+ uses SysUtils;
 
  const
   ratesFileName = 'rates.dat';
@@ -634,8 +643,14 @@ implementation
  function GetCachedRate(var b:TBoard;out hash:int64):boolean;
   var
    h:integer;
+   {$IFDEF CHECK_HASH}
+   h2:word;
+   {$ENDIF}
   begin
    hash:=BoardHash(b);
+   {$IFDEF CHECK_HASH}
+   h2:=CalcChecksum(@b,sizeof(TField));
+   {$ENDIF}
    h:=hash and CacheMask;
    if cache[h].hash=hash then
     with b do begin
@@ -651,13 +666,14 @@ implementation
     result:=false;
   end;
 
- procedure CacheBoardRate(hash:int64;rate:single);
+ procedure CacheBoardRate(hash:int64;rate:single;node:integer);
   var
    h:integer;
   begin
    h:=hash and CacheMask;
    cache[h].hash:=hash;
-   cache[h].rate:=round(rate*1000) shl 8;
+   cache[h].rate:=rate;
+   cache[h].idx:=node;
    inc(cacheMiss);
   end;
 
@@ -717,8 +733,8 @@ implementation
     rewrite(f);
     for i:=0 to high(turnLib) do
      with turnLib[i] do
-      writeln(f,Format('%s;from=%d;to=%d;plr=%s;weight=%d',
-       [FieldToStr(field),turnFrom,turnTo,plrs[whiteTurn],weight]));
+      writeln(f,Format('%s;from=%d;to=%d;plr=%s;weight=%d;desc=%s',
+       [FieldToStr(field),turnFrom,turnTo,plrs[whiteTurn],weight,NameCell(turnFrom)+'-'+NameCell(turnTo)]));
     close(f);
    except
     on e:Exception do begin
@@ -739,6 +755,9 @@ implementation
    n:=length(turnLib);
    p1:=data[board].lastTurnFrom;
    p2:=data[board].lastTurnTo;
+   // фактическая позиция перед ходом
+   board:=data[board].parent;
+   ASSERT(board>0);
    for i:=0 to n-1 do
     if turnLib[i].CompareWithBoard(data[board]) then begin
      turnlib[i].weight:=weight; // update weight
@@ -753,7 +772,6 @@ implementation
    turnlib[n].weight:=weight;
   end;
 
- /// TODO: дублируется код - переписать
  procedure AddLastMoveToLibrary(weight:byte);
   begin
    if curBoard.parent<0 then exit;
@@ -1128,4 +1146,8 @@ function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
     [FieldToStr(cells),byte(whiteTurn),rFlags,rate,quality]);
   end;
 
+initialization
+ InitCritSect(globalLock,'global');
+finalization
+ DeleteCritSect(globalLock);
 end.
