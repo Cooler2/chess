@@ -155,6 +155,7 @@ begin
   AiPerfTest;
   Status.Panels[1].Text:='';
  end;
+ // F5 - останов и проверка целостности структур данных
  if (key=VK_F5) and IsAiStarted then begin
   if IsAIRunning then begin
    LogMessage('F5: Pausing AI');
@@ -180,6 +181,13 @@ begin
     globalLock.Leave;
    end;
   end;
+ end;
+
+ // F8 - сохранить ход в библиотеке и вернуться к исходной позиции
+ if key=VK_F8 then begin
+  MenuSaveTurn.Click;
+  Status.Panels[1].Text:='Ход сохранён';
+  UndoBtn.Click;
  end;
 end;
 

@@ -429,6 +429,28 @@ implementation
    end;
   end;
 
+ // Если в библиотеке есть ходы для текущей позиции - увеличим оценку таким ходам в дереве чтобы
+ // повысить вероятность их выбора на текущей стадии или хотя бы увеличить глубину просмотра
+ procedure AdjustRatesUsingLibrary;
+  var
+   i,n:integer;
+   st:string;
+   v:single;
+  begin
+   n:=curBoard.firstChild;
+   while n>0 do begin
+    for i:=0 to high(turnLib) do
+     if turnLib[i].CompareWithBoard(data[n]) then begin
+      v:=0.01*random(turnLib[i].weight);
+      data[n].rate:=data[n].rate+v;
+      st:=st+Format(' %s +%.2f;',[data[n].LastTurnAsString,v]);
+      break;
+     end;
+    n:=data[n].nextSibling;
+   end;
+   if st<>'' then LogMessage('Library turns promoted:'+st);
+  end;
+
  procedure RateTree;
   var
    time:int64;
@@ -438,6 +460,8 @@ implementation
    if curBoard.firstChild>0 then begin
     curBoard.quality:=curBoard.quality+RateSubtree(curBoardIdx);
    end;
+   if IsMyTurn and (curboard.depth<10) then
+    AdjustRatesUsingLibrary;
    time:=MyTickCount-time;
    if time>100 then LogMessage('RateTree time: %d',[time]);
   end;
@@ -739,6 +763,7 @@ implementation
  function TryMakeDecision:boolean;
   const
    subQual:array[1..4] of single=(200,300,500,1000);
+   qual:array[1..4] of single=(12000,28000,50000,100000);
   var
    q,max:single;
    st:string;
@@ -749,12 +774,14 @@ implementation
    ASSERT(curBoard.firstChild>0);
    result:=false;
    n:=memSize-freeCnt;
-   LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d',
-    [round(curBoard.quality),n,round(100*n/memSize),estCounter]);
+   LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d, reqQ=%d, reqSubQ=%d, ',
+    [round(curBoard.quality),n,round(100*n/memSize),estCounter,
+     round(qual[aiLevel]),round(subQual[aiLevel])]);
 
    // 1. Имеется ли единственный ход
    n:=curBoard.firstChild;
    if data[n].nextSibling<=0 then begin // единственный ход
+    LogMessage('Single turn - no choice');
     moveReady:=n;
     result:=true;
    end;
@@ -786,21 +813,16 @@ implementation
      n:=data[n].nextSibling;
     end;
     if fl then begin
+     LogMessage('Single turn with high score');
      moveReady:=best;
      result:=true;
     end;
    end;
 
    // 3. Прочие лимиты
-   case aiLevel of
-    1:q:=10000;
-    2:q:=25000;
-    3:q:=50000;
-    4:q:=100000;
-   end;
    if not result and
      (data[best].quality>subQual[aiLevel]) and
-     (curBoard.quality>q) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
+     (curBoard.quality>Qual[aiLevel]) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
     moveReady:=best;
     result:=true;
    end;

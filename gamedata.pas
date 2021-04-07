@@ -137,9 +137,9 @@ type
 
  // Сохранённый ход
  TSavedTurn=record
-  field:TField;
-  whiteTurn:boolean;
-  turnFrom,turnTo,weight:byte;
+  field:TField; // позиция на моментначала хода
+  whiteTurn:boolean; // чей был ход
+  turnFrom,turnTo,weight:byte; // откуда и куда ход, вес - приоритет для выбора
   function CompareWithBoard(var b:TBoard):boolean;
  end;
 
@@ -722,7 +722,7 @@ implementation
 
  procedure SaveLibrary;
   const
-   plrs:array[boolean] of string=('white','black');
+   colorIsWhite:array[boolean] of string=('black','white');
   var
    i,n:integer;
    f:text;
@@ -734,7 +734,7 @@ implementation
     for i:=0 to high(turnLib) do
      with turnLib[i] do
       writeln(f,Format('%s;from=%d;to=%d;plr=%s;weight=%d;desc=%s',
-       [FieldToStr(field),turnFrom,turnTo,plrs[whiteTurn],weight,NameCell(turnFrom)+'-'+NameCell(turnTo)]));
+       [FieldToStr(field),turnFrom,turnTo,colorIsWhite[whiteTurn],weight,NameCell(turnFrom)+'-'+NameCell(turnTo)]));
     close(f);
    except
     on e:Exception do begin
@@ -755,21 +755,21 @@ implementation
    n:=length(turnLib);
    p1:=data[board].lastTurnFrom;
    p2:=data[board].lastTurnTo;
-   // фактическая позиция перед ходом
-   board:=data[board].parent;
-   ASSERT(board>0);
    for i:=0 to n-1 do
     if turnLib[i].CompareWithBoard(data[board]) then begin
      turnlib[i].weight:=weight; // update weight
-     SaveLibrary;
      exit;
     end;
    // не найдено
    SetLength(turnLib,n+1);
-   turnlib[n].field:=data[board].cells;
    turnlib[n].turnFrom:=p1;
    turnlib[n].turnTo:=p2;
    turnlib[n].weight:=weight;
+   // фактическая позиция перед ходом - в предке
+   board:=data[board].parent;
+   ASSERT(board>0);
+   turnlib[n].field:=data[board].cells;
+   turnLib[n].whiteTurn:=data[board].whiteTurn;
   end;
 
  procedure AddLastMoveToLibrary(weight:byte);
@@ -1116,8 +1116,9 @@ function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
  begin
   result:=false;
   if (b.lastTurnFrom<>turnFrom) or (b.lastTurnTo<>turnTo)
-    or (b.whiteTurn<>whiteTurn) then exit;
-  if CompareMem(@b.cells,@field,sizeof(field)) then exit;
+    or (not b.whiteTurn<>whiteTurn) then exit;
+  if b.parent<=0 then exit;
+  if not CompareMem(@data[b.parent].cells,@field,sizeof(field)) then exit;
   result:=true;
  end;
 
