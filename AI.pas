@@ -284,7 +284,7 @@ implementation
       wRate:=wRate-0.2*(abs(x-3.5)+abs(y-3.5));
       i:=bKingPos and $F;
       j:=bKingPos shr 4;
-      bRate:=bRate-0.15*(abs(i-x)+abs(j-y));
+      bRate:=bRate-0.15*max2(abs(i-x),abs(j-y));
     end;
     if bRate<6.5 then begin // у чёрных один король - держаться поближе к центру и подальше от белого короля
       x:=bKingPos and $F;
@@ -292,7 +292,7 @@ implementation
       bRate:=bRate-0.2*(abs(x-3.5)+abs(y-3.5));
       i:=wKingPos and $F;
       j:=wKingPos shr 4;
-      wRate:=wRate-0.15*(abs(i-x)+abs(j-y));
+      wRate:=wRate-0.15*max2(abs(i-x),abs(j-y));
       if wRate<6 then begin // одни короли - ничья
        wRate:=1; bRate:=1;
        setflags:=setflags or movStalemate;
@@ -399,7 +399,7 @@ implementation
   const
    QUALITY_FADE = 0.5;
   var
-   i,d:integer;
+   d:integer;
    best,v:single;
    mode:boolean;
   begin
@@ -433,7 +433,9 @@ implementation
     end;
     flags:=flags or movRated;
     quality:=quality+result;
-    rate:=best;
+    // Достигнуть какой-либо величины выгоднее в краткосрочной перспективе, поэтому оценка затухает
+    // Иначе AI может сильно углублять ветки, не имеющие развития позиции в ущерб тем, где развитие возможно.
+    rate:=best*0.999;
    end;
   end;
 
@@ -613,7 +615,6 @@ implementation
  // Начинает строить дерево поиска. А контролировать работу будет таймер.
  procedure StartThinking;
   var
-   i,w:integer;
    time:int64;
    node:integer;
   begin
@@ -643,7 +644,7 @@ implementation
    CutThreshold:array[0..4] of single=(0,1000,2000,3000,5000);
   var
    n,count,next,deleted,was:integer;
-   min,max,v,tr:single;
+   min,max,v:single;
    st:string;
   begin
    n:=data[node].firstChild;
@@ -722,8 +723,8 @@ implementation
  // поэтому по мере углубления дерева нужно уменьшать задачу
  procedure ExtendTree(node,recursion:integer;var outList:PInteger);
   var
-   n,count,next,v,boost:integer;
-   p,q,max3,max2,max,tr:single;
+   n,count:integer;
+   p,max3,max2,max,tr:single;
    prior:array[0..199] of single;
   begin
    n:=data[node].firstChild;
@@ -886,7 +887,7 @@ implementation
  procedure UpdateJob;
   var
    time:int64;
-   i,n,count:integer;
+   n,count:integer;
    pList,p:PInteger;
    list:array[0..1023] of integer;
    st:string;

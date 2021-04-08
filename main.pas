@@ -675,7 +675,7 @@ end;
 
 procedure TMainForm.AddLastTurnNote;
 var
- i,j,x,y:integer;
+ i,j:integer;
  v:byte;
  st,s2:string;
  beatable:TBeatable;

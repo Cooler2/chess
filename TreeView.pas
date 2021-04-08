@@ -56,7 +56,7 @@ procedure InitTree;
 
 procedure TTreeWnd.BuildTree;
 var
- d,idx,c,parent:integer;
+ d,idx,parent:integer;
 begin
  parent:=curBoardIdx;
  for d:=1 to high(treeData) do begin
@@ -291,11 +291,10 @@ end;
 procedure TTreeWnd.FormMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
- i,row,col,v,idx:integer;
+ i,col,v,idx:integer;
 begin
  col:=(x+10) div COL_WIDTH;
  if col>high(treeData) then exit;
- i:=1;
  with treeData[col] do
   for i:=0 to high(items) do
    if (y>=pos[i]-8) and (y<=pos[i]+8) then begin

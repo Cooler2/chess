@@ -379,7 +379,6 @@ implementation
    // проверка ствола дерева
    n:=curBoardIdx;
    i:=curBoard.depth;
-   p:=n;
    while n>1 do begin
     testNode:=n;
     ASSERT(data[n].nextSibling=0);
@@ -420,7 +419,7 @@ implementation
     end;
    end;
 
-   n:=CountNodes(1);
+  // n:=CountNodes(1);
   // if n+freeCnt+1<>memSize then // либо дерево содержит освобождённые ноды, либо есть ноды вне дерева
   //  raise EError.Create('Tree node count doesn''t match');
 
@@ -530,6 +529,7 @@ implementation
      LogMessage('Loading turns library');
      assign(f,libFileName);
      reset(f);
+     n:=0;
      while not eof(f) do begin
       readln(f,st);
       sa:=Split(';',st);
@@ -564,7 +564,7 @@ implementation
   const
    colorIsWhite:array[boolean] of string=('black','white');
   var
-   i,n:integer;
+   i:integer;
    f:text;
   begin
    LogMessage('Saving library');
@@ -588,7 +588,6 @@ implementation
  procedure AddMoveToLibrary(board:integer;weight:byte);
   var
    i,n:integer;
-   f:file;
    p1,p2:byte;
   begin
    // Проверить, есть ли уже такой ход в библиотеке
@@ -656,7 +655,6 @@ implementation
   var
    i,h:integer;
    hash:int64;
-   extHash:int64;
    b:TBoard;
   begin
     for i:=0 to high(dbRates) do begin
