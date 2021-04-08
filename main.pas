@@ -313,6 +313,7 @@ var
  st:string;
  sa:StringArr;
 begin
+ OpenD.InitialDir:=GetCurrentDir;
  if not OpenD.Execute then exit;
  if not fileExists(openD.Filename) then exit;
  AssignFile(f,OpenD.filename);
@@ -340,6 +341,8 @@ begin
  redobtn.enabled:=false;
  UpdateCurPlrBtn;
 
+ ClearCache;
+ UpdateCacheWithRates;
  DrawBoard(sender);
 end;
 

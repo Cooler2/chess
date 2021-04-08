@@ -1,24 +1,26 @@
+{$DEFINE CHECK_CACHE}
 unit cache;
 interface
 uses gamedata;
 const
+
  // Размер кэша оценок
  {$IFDEF CPUx64}
- cacheSize=$1000000; //  16M элементов - 256M памяти
- cacheMask= $FFFFFF;
- {$ELSE}
- //cacheSize=$1000000; //  16M элементов - 256M памяти
- //cacheMask= $FFFFFF;
- cacheSize=$1000000; //  1M элементов - 256M памяти
- cacheMask= $FFFFFF;
+ cacheSize = $800000; // 8M записей (640MB)
+ cacheMask = $7FFFFF;
+ {$ENDIF}
+ {$IFDEF CPU386}
+ cacheSize = $400000; // 4M записей (320MB)
+ cacheMask = $3FFFFF;
  {$ENDIF}
 
 type
  // Сохранённая в кэше оценка позиции
  TCacheItem=record
   hash:int64;
+  cells:TField;
   rate:single;
-  extra:word; // дополнительное поле для обнаружения хэш-коллизий
+
   quality:byte; // если больше 0 - оценка из БД, соответствует тысячам quality; если 0 - обычная оценка
   flags:byte; // маска флагов, установленных EstimatePosition
  end;
@@ -36,13 +38,12 @@ var
  cacheError:NativeInt; // кол-во обнаруженных хэш-коллизий
 
  // Вычисление хэша позиции - 96 бит (64 бита - основная часть, 32 - расширенная, для контроля коллизий)
- procedure BoardHash(var board;out hash:int64;out extHash:cardinal);
- //function BoardHashOld(var b:TBoard;out extHash:cardinal):int64;
+ procedure BoardHash(var board;out hash:int64);
 
  // Ищет в кэше оценку для данной позиции: если она есть - заполняет её и возвращает true
- function GetCachedRate(var b:TBoard;out hash:int64;out extHash:cardinal):boolean;
+ function GetCachedRate(var b:TBoard;out hash:int64):boolean;
  // Заносит оценку в кэш
- procedure CacheBoardRate(hash:int64;extHash:cardinal;rate:single);
+ procedure CacheBoardRate(var b:TBoard;hash:int64;setFlags:byte;rate:single);
  // Обнуление статистики
  procedure ResetCacheStat;
  // Очистка кэша
@@ -91,9 +92,7 @@ implementation
 
  procedure ResetCacheStat;
   begin
-   if cacheError>0 then
-    ErrorMessage(Format('Cache collisions: %d (%.3f%%)',
-      [cacheError,100*cacheError/(cacheFill+1)]));
+   cacheUse:=0;
    cacheHit:=0;
    cacheFill:=0;
    cacheError:=0;
@@ -170,38 +169,34 @@ implementation
 
  // Хэш вычисляется как xor-комбинация псевдослучайного набора из 64-битных чисел, взятых из таблицы.
  // Для каждого входящего байта берётся очередное число и изменяется указатель в таблице
- procedure BoardHash(var board;out hash:int64;out extHash:cardinal);
-  asm // eax=board, edx=@hash, ecx=@extHash
+ procedure BoardHash(var board;out hash:int64);
+  asm // eax=board, edx=@hash
   {$IFDEF CPU386}
    push esi
    push ebx
    push ecx
    mov esi,board
    mov ecx,BOARD_DATA_SIZE
-   pxor mm0,mm0
+   pxor mm0,mm0 // основной хэш
    xor eax,eax // индекс в таблице
 @01:
    add al,[esi]
    inc esi
-   //movd mm0,ebx
    movd ebx,mm0
    pxor mm0,qword ptr [offset randomtab+eax*8]
-   sub al,bh
+   add al,bh
    dec ecx
    jnz @01
    // основной результат
    movq [edx],mm0
-   // сохраняем расширенную часть
    pop ecx
-   add ebx,eax // предпоследний операнд комбинируем с индексом последнего операнда
-   mov [ecx],ebx
    // выход
    pop ebx
    pop esi
    emms
   {$ENDIF}
   {$IFDEF CPUx64}
-   // rcx = board, rdx = @hash, r8 = @extHash
+   // rcx = board, rdx = @hash
    push rsi
    push rbx
    push r10
@@ -220,9 +215,6 @@ implementation
    jnz @01
    // основной результат
    mov [rdx],r10
-   // сохраняем расширенную часть
-   add rbx,rax // предпоследний операнд комбинируем с индексом последнего операнда
-   mov [r8],ebx // extHash
    // выход
    pop r10
    pop rbx
@@ -230,18 +222,15 @@ implementation
    {$ENDIF}
   end;
 
- function GetCachedRate(var b:TBoard;out hash:int64;out extHash:cardinal):boolean;
+ function GetCachedRate(var b:TBoard;out hash:int64):boolean;
   var
    h:integer;
   begin
    inc(cacheUse);
-   BoardHash(b,hash,extHash);
+   BoardHash(b,hash);
    h:=hash and CacheMask;
-   if (rateCache[h].hash=hash) and (byte(rateCache[h].extra)=byte(extHash)) then begin
-    if rateCache[h].extra<>word(extHash) then begin // Коллизия! Основной хэш совпадает, а расширенный - нет!
-     inc(cacheError);
-     exit(false);
-    end;
+   if (rateCache[h].hash<>hash) then exit(false);
+   if CompareMem(@b.cells,@rateCache[h].cells,sizeof(TField)) then
     with b do begin
      inc(cacheHit);
      whiterate:=1;
@@ -257,22 +246,21 @@ implementation
      end;
      if PlayerWhite then rate:=-rate;
      result:=true;
-    end;
-   end
+    end
    else
     result:=false;
   end;
 
- procedure CacheBoardRate(hash:int64;extHash:cardinal;rate:single);
+ procedure CacheBoardRate(var b:TBoard;hash:int64;setFlags:byte;rate:single);
   var
    h:integer;
   begin
    h:=hash and CacheMask;
    rateCache[h].hash:=hash;
-   rateCache[h].extra:=extHash;
    rateCache[h].rate:=rate;
-   rateCache[h].quality:=0; // значит оценка не из базы
-   rateCache[h].flags:=0;
+   rateCache[h].quality:=0; // оценка не из базы
+   rateCache[h].flags:=setFlags;
+   rateCache[h].cells:=b.cells;
    inc(cacheFill);
   end;
 

@@ -137,13 +137,13 @@ implementation
    v:single;
    maxblack,maxwhite:single;
    hash:int64;
-   extHash:cardinal;
    h:integer;
    beatable:TBeatable;
    b:PBoard;
    cachedRate:single;
    cachedFromDB:boolean;
    wRate,bRate:single;
+   setFlags:byte;
   begin
    inc(estCounter);
    b:=@data[boardIdx];
@@ -165,13 +165,14 @@ implementation
    end;
 
    // Оценка уже есть в кэше?
-   if  not noCache and
+   if not noCache and
     (aiCacheEnabled or aiUseDB) then
-    if GetCachedRate(b^,hash,extHash) then begin
+    if GetCachedRate(b^,hash) then begin
       IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: избавиться)
       exit;
      end;
 
+   setFlags:=0;
    with b^ do begin
     wRate:=-300;
     bRate:=-300;
@@ -254,11 +255,13 @@ implementation
      maxblack:=0; maxwhite:=0;
      for i:=0 to 7 do
       for j:=0 to 7 do begin
-       v:=0.08;
-       if (i in [2..5]) and (j in [2..5]) then v:=0.09;
-       if (i in [3..4]) and (j in [3..4]) then v:=0.11;
-       if beatable[i,j] and White>0 then wRate:=wRate+v;
-       if beatable[i,j] and Black>0 then bRate:=bRate+v;
+       if gamestage<3 then begin // кол-во полей под боем неактуально в эндшпиле
+        v:=0.08;
+        if (i in [2..5]) and (j in [2..5]) then v:=0.09;
+        if (i in [3..4]) and (j in [3..4]) then v:=0.11;
+        if beatable[i,j] and White>0 then wRate:=wRate+v;
+        if beatable[i,j] and Black>0 then bRate:=bRate+v;
+       end;
        // Незащищенная фигура под боем на ходу противника - минус фигуру!
        if (b.whiteTurn) and (beatable[i,j] and White>0) and (GetPieceColor(i,j)=Black) then begin
         if beatable[i,j] and Black>0 then v:=bweight[GetPieceType(i,j)]-bweight2[beatable[i,j] and 7]
@@ -278,7 +281,7 @@ implementation
     if wRate<6.5 then begin // у белых один король - держаться поближе к центру и подальше от чёрного короля
       x:=wKingPos and $F;
       y:=wKingPos shr 4;
-      wRate:=wRate-0.2*(abs(i-3.5)+abs(j-3.5));
+      wRate:=wRate-0.2*(abs(x-3.5)+abs(y-3.5));
       i:=bKingPos and $F;
       j:=bKingPos shr 4;
       bRate:=bRate-0.15*(abs(i-x)+abs(j-y));
@@ -286,13 +289,13 @@ implementation
     if bRate<6.5 then begin // у чёрных один король - держаться поближе к центру и подальше от белого короля
       x:=bKingPos and $F;
       y:=bKingPos shr 4;
-      bRate:=bRate-0.2*(abs(i-3.5)+abs(j-3.5));
+      bRate:=bRate-0.2*(abs(x-3.5)+abs(y-3.5));
       i:=wKingPos and $F;
       j:=wKingPos shr 4;
       wRate:=wRate-0.15*(abs(i-x)+abs(j-y));
       if wRate<6 then begin // одни короли - ничья
        wRate:=1; bRate:=1;
-       flags:=flags or movStalemate;
+       setflags:=setflags or movStalemate;
       end;
     end;
 
@@ -301,12 +304,14 @@ implementation
     rate:=(wRate-bRate)*(1+10/(bRate+wRate));
 
     if (wRate<-200) or (bRate<-200) then begin
-     flags:=flags or movCheckmate;
+     setflags:=setflags or movCheckmate;
     end;
+
+    flags:=flags or setFlags;
 
     // сохранить вычисленную оценку в кэше
     if not noCache and aiCacheEnabled then
-     CacheBoardRate(hash,extHash,rate);
+     CacheBoardRate(b^,hash,setFlags,rate);
 
     if PlayerWhite then rate:=-rate;
    end;
@@ -372,6 +377,7 @@ implementation
    oldWeight:integer;
   begin
    oldWeight:=data[node].weight;
+   if oldWeight>=180 then exit;
    ASSERT((add>=0) and (add<16));
    inc(data[node].weight,add);
    ASSERT((data[node].weight>-20) and (data[node].weight<200),'Node: '+inttostr(node));
@@ -551,9 +557,9 @@ implementation
    if i<>secondsElapsed then begin
     secondsElapsed:=i;
     est:=estCounter-startEstCounter;
-    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s, кэш: %.1f%% (%d!)',
+    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s, кэш: %.1f%%',
      [stage,secondsElapsed,FormatInt(memSize-freeCnt),
-       FormatInt(active.count),FormatInt(est),100*cacheHit/(est+1),cacheError]);
+       FormatInt(active.count),FormatInt(est),100*cacheHit/(est+1)]);
 
     // Кол-во оценок в секунду:
     if lastStatTime>0 then begin
@@ -887,7 +893,6 @@ implementation
    min,max:single;
   begin
    time:=MyTickCount;
-   try
     // Возможные состояния:
     // 1) нет активных элементов (работа выполнена)
     // 2) закончилась память
@@ -905,7 +910,14 @@ implementation
     if active.count=0 then begin
       if not isMyTurn or not TryMakeDecision then begin
         active.Clear;
-        //VerifyTree;
+        try
+         VerifyTree;
+        except
+         on e:exception do
+          raise Exception.Create(Format('Tree verification error.'#13#10'Test node %d'#13#10'Path: %s',
+           [testNode,BuildLine(testNode)]));
+        end;
+
         if (stage<25) and (stage<stopAfterStage) then begin
          inc(stage);
          if stage=1 then LogMessage('Start thinking: stage 1. CurNode children %d',[CountNodes(curBoardIdx)]);
@@ -937,9 +949,6 @@ implementation
          end;
        end;
      end;
-   except
-    on e:Exception do ErrorMessage('UpdateJob: '+ExceptionMsg(e));
-   end;
   end;
 
  // Таймер вызывается из главного потока.
@@ -1130,8 +1139,9 @@ implementation
     end;
     idle:=false;
 
-    // поток с ID=0 - управляющий: если все остальные потоки спят
-    if (id=0) and (workingThreads=1) and (moveReady=0) and
+    try
+     // поток с ID=0 - управляющий: если все остальные потоки спят
+     if (id=0) and (workingThreads=1) and (moveReady=0) and
        ((active.count=0) or (freeCnt<=100)) then begin
       // нет больше активных элементов либо закончилась память
       globalLock.Enter;
@@ -1152,18 +1162,25 @@ implementation
       continue;
      end;
 
-    node:=0;
-    if freeCnt>100 then // если память на исходе - работать нельзя
-     node:=active.Get;
-    if node=0 then begin // список пуст - работы нет
-     inc(waitCounter);
-     AtomicDecrement(workingThreads);
-     Sleep(1);
-     AtomicIncrement(workingThreads);
-     continue;
+     node:=0;
+     if freeCnt>100 then // если память на исходе - работать нельзя
+      node:=active.Get;
+     if node=0 then begin // список пуст - работы нет
+      inc(waitCounter);
+      AtomicDecrement(workingThreads);
+      Sleep(1);
+      AtomicIncrement(workingThreads);
+      continue;
+     end;
+     ExtendNode(node);
+     inc(counter);
+    except
+     on e:Exception do begin
+      idle:=true;
+      PauseAI;
+      ShowMessage('AI suspended. Reason: '#13#10+e.Message,'AI error');
+     end;
     end;
-    ExtendNode(node);
-    inc(counter);
 
    until terminated;
    AtomicDecrement(workingThreads);
@@ -1257,25 +1274,59 @@ function TBaskets.Get:integer;
 
  procedure AiPerfTest;
   var
-   i:integer;
+   i,x,y:integer;
    t1:single;
    h:int64;
-   h2:cardinal;
+   beatable:TBeatable;
+   moves:TMovesList;
+   b:TBoard;
   begin
-{   StartMeasure(1);
+   // Вычисление хэша
+   StartMeasure(1);
    for i:=1 to 10000000 do
-    BoardHash(curBoard^,h,h2);
+    BoardHash(curBoard^,h);
     //h:=BoardHashOld(curBoard^,h2);
    t1:=EndMeasure(1);
+   ShowMessage(Format('BoardHash time = %3.2f'#13#10'Hash=%s',[t1,IntToHex(h)]),
+    'Performance');
 
-   ShowMessage(Format('BoardHash time = %3.2f'#13#10'Hash=%s, ext=%s',[t1,IntToHex(h),IntToHex(h2)]),
-    'Performance');  }
+   // DoMove
+{   StartMeasure(1);
+   i:=curBoard.firstChild;
+   if i<=0 then exit;
+   x:=data[i].lastTurnFrom;
+   y:=data[i].lastTurnTo;
+   for i:=1 to 10000000 do begin
+    b:=curBoard^;
+    DoMove(b,x,y);
+   end;
+   t1:=EndMeasure(1);
+   ShowMessage(Format('DoMove = %3.2f',[t1]),'Performance');}
 
-   StartMeasure(1);
-   for i:=1 to 300000 do
+   // Медленные функции выполняются по 50 000 раз чтобы можно было их сравнивать между собой
+   // Оценка позиции
+{   StartMeasure(1);
+   for i:=1 to 500000 do
     EstimatePosition(curBoardIdx,false,true);
    t1:=EndMeasure(1);
-   ShowMessage(Format('EstimatePosition = %3.2f',[t1]),'Performance');
+   ShowMessage(Format('EstimatePosition = %3.2f',[t1]),'Performance');}
+
+   // CalcBeatable
+{   StartMeasure(1);
+   for i:=1 to 500000 do
+    CalcBeatable(curBoard^,beatable);
+   t1:=EndMeasure(1);
+   ShowMessage(Format('CalcBeatable = %3.2f',[t1]),'Performance');}
+
+   // GetAvailMoves
+{   StartMeasure(1);
+   for i:=1 to 500000 do
+    for x:=0 to 7 do
+     for y:=0 to 7 do
+      GetAvailMoves(curBoard^,x+y shl 4,moves);
+   t1:=EndMeasure(1);
+   ShowMessage(Format('GetAvailMoves = %3.2f',[t1]),'Performance');}
+
   end;
 
 end.

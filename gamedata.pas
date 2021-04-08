@@ -1,5 +1,4 @@
 ﻿// Константы, типы, глобальные данные и операции над ними
-//{$DEFINE CHECK_HASH}
 unit gamedata;
 interface
 uses Apus.MyServis;
@@ -48,11 +47,11 @@ const
 
  movGameOver = movCheckmate+movStalemate+movRepeat; // один из вариантов конца игры
 
- // Максимальное количество элементов в массиве данных
+ // Максимальное количество элементов в массиве данных.
  {$IFDEF CPUx64}
  memSize = 12000000;
  {$ELSE}
- memSize =  6000000; // временно уменьшено
+ memSize =  8000000;
  {$ENDIF}
 
 type
@@ -179,6 +178,7 @@ var
  // ---
  function NameCell(x,y:integer):string; overload; // формирует имя клетки, например 'b3'
  function NameCell(cell:integer):string; overload; // формирует имя клетки, например 'b3'
+ function BuildLine(node:integer):string; // формирует цепочку ходов от текущей позиции к указанной
  function FieldToStr(f:TField):string;
  function FieldFromStr(st:string):TField;
  function IsPlayerTurn:boolean; // true - ход игрока, false - противника
@@ -399,6 +399,8 @@ implementation
       testNode:=i;
       ASSERT(parent>0);
       ASSERT(data[parent].depth=depth-1);
+{      if depth>d+1 then
+       ASSERT(data[parent].weight>=weight);}
       if depth<d then begin
        // ствол дерева
        ASSERT(nextSibling=0);
@@ -412,8 +414,10 @@ implementation
 
    for i:=1 to high(freeList)-1 do begin
     n:=freeList[i];
-    if (i<freeCnt) and (data[n].debug<>0) then
+    if (i<freeCnt) and (data[n].debug<>0) then begin
+     testNode:=n;
      raise EError.Create('Free node was allocated');
+    end;
    end;
 
    n:=CountNodes(1);
@@ -490,6 +494,17 @@ implementation
  function NameCell(cell:integer):string;
   begin
    result:=NameCell(cell and $F,cell shr 4);
+  end;
+
+ function BuildLine(node:integer):string;
+  begin
+   while node>0 do
+    with data[node] do begin
+     result:=NameCell(lastTurnFrom)+'-'+NameCell(lastTurnTo)+' / '+result;
+     node:=parent;
+     if node=curBoardIdx then exit;
+    end;
+   result:='[no path]';
   end;
 
 { function CompareBoards(b1,b2:integer):integer;
@@ -641,14 +656,15 @@ implementation
   var
    i,h:integer;
    hash:int64;
-   extHash:cardinal;
+   extHash:int64;
    b:TBoard;
   begin
     for i:=0 to high(dbRates) do begin
      move(dbRates[i],b,sizeof(TField)+2);
-     BoardHash(b,hash,extHash);
+     BoardHash(b,hash);
      h:=hash and cacheMask;
      rateCache[h].hash:=hash;
+     rateCache[h].cells:=b.cells;
      rateCache[h].rate:=dbRates[i].rate;
      rateCache[h].flags:=dbRates[i].rFlags or movDB;
      rateCache[h].quality:=dbRates[i].quality;

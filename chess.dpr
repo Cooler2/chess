@@ -1,3 +1,4 @@
+{$SETPEFLAGS $20} // Allow 4GB memory space for 32-bit process
 program chess;
 
 uses
