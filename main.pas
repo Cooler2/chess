@@ -53,6 +53,7 @@ type
     MenuSaveState: TMenuItem;
     MenuLoadState: TMenuItem;
     multithreadedModeBtn: TCheckBox;
+    CacheEnableBtn: TCheckBox;
     procedure DrawBoard(Sender: TObject);
     procedure PBoxMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
@@ -103,7 +104,7 @@ var
   MainForm: TMainForm;
 
 implementation
- uses Apus.MyServis,gamedata,logic,AI,TreeView;
+ uses Apus.MyServis,gamedata,logic,AI,TreeView, cache;
 {$R *.dfm}
  var
   turnFrom,turnTo:integer;
@@ -529,10 +530,11 @@ end;
 
 procedure TMainForm.UpdateOptions(Sender: TObject);
 begin
- useLibrary:=LibEnableBtn.checked;
+ aiUseLibrary:=LibEnableBtn.checked;
  aiUseDB:=useDbBtn.Checked;
  aiSelfLearn:=selfLearnBtn.Checked;
  aiMultithreadedMode:=multithreadedModeBtn.Checked;
+ aiCacheEnabled:=CacheEnableBtn.Checked;
 end;
 
 procedure TMainForm.selLevelChange(Sender: TObject);
@@ -626,8 +628,9 @@ procedure TMainForm.SwapBtnClick(Sender: TObject);
 begin
  PlayerWhite:=not PlayerWhite;
  DrawBoard(sender);
- // Необходима очистка кэша, т.к. оценки справедливы для другого игрока 
- fillchar(cache,sizeof(cache),0);
+ // Необходима очистка кэша, т.к. оценки справедливы для другого игрока
+ ClearCache;
+ UpdateCacheWithRates;
 end;
 
 procedure TMainForm.TimerTimer(Sender: TObject);

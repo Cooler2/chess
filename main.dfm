@@ -150,13 +150,12 @@ object MainForm: TMainForm
     ExplicitLeft = 517
   end
   object Label1: TLabel
-    Left = 598
-    Top = 429
+    Left = 551
+    Top = 432
     Width = 47
     Height = 13
     Anchors = [akTop, akRight]
     Caption = #1059#1088#1086#1074#1077#1085#1100':'
-    ExplicitLeft = 566
   end
   object RedoBtn: TSpeedButton
     Left = 668
@@ -220,9 +219,9 @@ object MainForm: TMainForm
     TabOrder = 2
   end
   object selLevel: TComboBox
-    Left = 551
-    Top = 447
-    Width = 151
+    Left = 604
+    Top = 429
+    Width = 98
     Height = 21
     Style = csDropDownList
     Anchors = [akTop, akRight]
@@ -237,19 +236,20 @@ object MainForm: TMainForm
       #1052#1072#1082#1089#1080#1084#1072#1083#1100#1085#1099#1081)
   end
   object LibEnableBtn: TCheckBox
-    Left = 551
+    Left = 557
     Top = 474
     Width = 153
     Height = 17
     Hint = #1047#1072#1076#1077#1081#1089#1090#1074#1086#1074#1072#1090#1100' '#1073#1080#1073#1083#1080#1086#1090#1077#1082#1091' '#1076#1077#1073#1102#1090#1086#1074
     Anchors = [akTop, akRight]
     Caption = #1073#1080#1073#1083#1080#1086#1090#1077#1082#1072' '#1076#1077#1073#1102#1090#1086#1074
-    Enabled = False
+    Checked = True
+    State = cbChecked
     TabOrder = 4
     OnClick = UpdateOptions
   end
   object useDbBtn: TCheckBox
-    Left = 551
+    Left = 557
     Top = 492
     Width = 153
     Height = 17
@@ -261,7 +261,7 @@ object MainForm: TMainForm
     OnClick = UpdateOptions
   end
   object selfLearnBtn: TCheckBox
-    Left = 551
+    Left = 557
     Top = 510
     Width = 153
     Height = 17
@@ -273,7 +273,7 @@ object MainForm: TMainForm
     OnClick = UpdateOptions
   end
   object multithreadedModeBtn: TCheckBox
-    Left = 551
+    Left = 557
     Top = 528
     Width = 153
     Height = 17
@@ -285,6 +285,19 @@ object MainForm: TMainForm
     Checked = True
     State = cbChecked
     TabOrder = 7
+    OnClick = UpdateOptions
+  end
+  object CacheEnableBtn: TCheckBox
+    Left = 557
+    Top = 456
+    Width = 153
+    Height = 17
+    Hint = #1059#1089#1082#1086#1088#1103#1077#1090' '#1088#1072#1073#1086#1090#1091
+    Anchors = [akTop, akRight]
+    Caption = #1082#1101#1096#1080#1088#1086#1074#1072#1085#1080#1077
+    Checked = True
+    State = cbChecked
+    TabOrder = 8
     OnClick = UpdateOptions
   end
   object Pieces: TImageList

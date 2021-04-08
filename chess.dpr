@@ -6,7 +6,8 @@ uses
   logic in 'logic.pas',
   TreeView in 'TreeView.pas' {TreeWnd},
   gamedata in 'gamedata.pas',
-  AI in 'AI.pas';
+  AI in 'AI.pas',
+  cache in 'cache.pas';
 
 {$R *.res}
 

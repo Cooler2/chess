@@ -2,12 +2,13 @@
 unit AI;
 interface
  var
-  useLibrary:boolean=false; // разрешение использовать библиотеку дебютов
+  aiUseLibrary:boolean=false; // разрешение использовать библиотеку дебютов
   turnTimeLimit:integer = 5; // turn time limit in seconds
   aiLevel:integer; // уровень сложности (1..4) - определяет момент, когда AI принимает решение о готовности хода
   aiSelfLearn:boolean=true; // режим самообучения: пополняет базу оценок позиций в ходе игры
   aiUseDB:boolean=true; // можно ли использовать БД оценок позиций
   aiMultithreadedMode:boolean=true;
+  aiCacheEnabled:boolean=true; // разрешить запись оценок в кэш
 
   aiStatus:string; // строка состояния работы AI
   moveReady:integer; // готовность хода - индекс выбранной доски продолжения (<=0 - ход не готов). Когда выставляется - AI ставится на паузу
@@ -31,9 +32,8 @@ interface
  // либо из кэша оценок (если такая позиция уже встречалась в текущей сессии, отключаемо).
  procedure EstimatePosition(boardIdx:integer;simplifiedMode:boolean;noCache:boolean=false);
 
-
 implementation
- uses Apus.MyServis,Windows,SysUtils,Classes,gamedata,logic;
+ uses Apus.MyServis,Windows,SysUtils,Classes,gamedata,logic,cache;
 
  const
   // штраф за незащищенную фигуру под боем
@@ -137,6 +137,7 @@ implementation
    v:single;
    maxblack,maxwhite:single;
    hash:int64;
+   extHash:cardinal;
    h:integer;
    beatable:TBeatable;
    b:PBoard;
@@ -163,12 +164,13 @@ implementation
     j:=data[j].parent;
    end;
 
-{   // Оценка уже есть в кэше?
-   if not noCache then
-    if GetCachedRate(b^,hash) then begin
+   // Оценка уже есть в кэше?
+   if  not noCache and
+    (aiCacheEnabled or aiUseDB) then
+    if GetCachedRate(b^,hash,extHash) then begin
       IsCheck(b^); // флаги шаха нужно вычислить в любом случае (TODO: избавиться)
       exit;
-     end;}
+     end;
 
    with b^ do begin
     wRate:=-300;
@@ -303,8 +305,8 @@ implementation
     end;
 
     // сохранить вычисленную оценку в кэше
-    if not noCache then
-     CacheBoardRate(hash,rate,boardIdx);
+    if not noCache and aiCacheEnabled then
+     CacheBoardRate(hash,extHash,rate);
 
     if PlayerWhite then rate:=-rate;
    end;
@@ -549,9 +551,9 @@ implementation
    if i<>secondsElapsed then begin
     secondsElapsed:=i;
     est:=estCounter-startEstCounter;
-    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s, кэш: %.1f%%',
+    aiStatus:=Format('[%d] Прошло: %d c, позиций: %s, активно %s, оценок: %s, кэш: %.1f%% (%d!)',
      [stage,secondsElapsed,FormatInt(memSize-freeCnt),
-       FormatInt(active.count),FormatInt(est),100*cacheHit/(est+1)]);
+       FormatInt(active.count),FormatInt(est),100*cacheHit/(est+1),cacheError]);
 
     // Кол-во оценок в секунду:
     if lastStatTime>0 then begin
@@ -611,7 +613,7 @@ implementation
   begin
    time:=MyTickCount;
    stage:=1;
-   cacheMiss:=0; cacheHit:=0;
+   ResetCacheStat;
    startTime:=time;
    secondsElapsed:=-1;
    startEstCounter:=estCounter;
@@ -845,7 +847,7 @@ implementation
 
     startTime:=MyTickCount;
     startEstCounter:=estCounter;
-    cacheMiss:=0; cacheHit:=0;
+    ResetCacheStat;
     stage:=0;
     // удаление ненужных веток
     n:=freeCnt;
@@ -1001,7 +1003,7 @@ implementation
    end;
    LogMessage('Tree state after turn: '+st);
    startTime:=MyTickCount;
-   cacheMiss:=0; cacheHit:=0;
+   ResetCacheStat;
    startEstCounter:=estCounter;
    ResumeAI;
   end;
@@ -1258,12 +1260,16 @@ function TBaskets.Get:integer;
    i:integer;
    t1:single;
    h:int64;
+   h2:cardinal;
   begin
 {   StartMeasure(1);
-   for i:=1 to 3000000 do
-    h:=BoardHash(curBoard^);
+   for i:=1 to 10000000 do
+    BoardHash(curBoard^,h,h2);
+    //h:=BoardHashOld(curBoard^,h2);
    t1:=EndMeasure(1);
-   ShowMessage(Format('BoardHash time = %3.2f, value=%s',[t1,IntToHex(h)]),'Performance');}
+
+   ShowMessage(Format('BoardHash time = %3.2f'#13#10'Hash=%s, ext=%s',[t1,IntToHex(h),IntToHex(h2)]),
+    'Performance');  }
 
    StartMeasure(1);
    for i:=1 to 300000 do
