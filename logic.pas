@@ -492,11 +492,15 @@ implementation
     // пешка на проходе
     if (ny=2) and (GetCell(nx,ny+1)=PawnWhite) and (LastTurnFrom=nx+(ny-1) shl 4)
      and (LastTurnTo=nx+(ny+1) shl 4) then begin
-      SetCell(nx,ny+1,0); board.flags:=board.flags or movBeat;
+      SetCell(nx,ny+1,0);
+      SetFlag(movBeat);
+      lastPiece:=PawnWhite;
     end;
     if (ny=5) and (GetCell(nx,ny-1)=PawnBlack) and (LastTurnFrom=nx+(ny+1) shl 4)
      and (LastTurnTo=nx+(ny-1) shl 4) then begin
       SetCell(nx,ny-1,0);
+      SetFlag(movBeat);
+      lastPiece:=PawnBlack;
     end;
 
     piece:=v and PieceMask;

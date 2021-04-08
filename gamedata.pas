@@ -87,6 +87,8 @@ type
   function CellOccupied(x,y:integer):boolean; inline;
   function GetCell(x,y:integer):byte; inline;
   procedure SetCell(x,y:integer;value:integer); {$IFNDEF COMPACT} inline; {$ENDIF}
+  procedure SetFlag(f:byte); inline;
+  procedure ClearFlag(f:byte); inline;
   function GetPieceType(x,y:integer):byte; inline;
   function GetPieceColor(x,y:integer):byte; inline;
   function HasChild(turnFrom,turnTo:integer):integer; // есть ли среди потомков вариант с указанным ходом? Если есть - возвращает его
@@ -260,7 +262,8 @@ implementation
     depth:=data[_parent].depth+1;
     weight:=data[_parent].weight-10;
     whiteTurn:=not data[_parent].whiteTurn;
-
+    lastTurnFrom:=data[_parent].lastTurnFrom;
+    lastTurnTo:=data[_parent].lastTurnTo;
     flags:=0;
     quality:=1;
    end;
@@ -860,6 +863,16 @@ function FieldFromStr(st: string):TField;
    cells[x,y]:=value;
   end;
  {$ENDIF}
+
+ procedure TBoard.SetFlag(f:byte);
+  begin
+   flags:=flags or f;
+  end;
+
+ procedure TBoard.ClearFlag(f:byte);
+  begin
+   flags:=flags and not f;
+  end;
 
  function TBoard.ToString: string;
   begin
