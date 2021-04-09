@@ -166,20 +166,15 @@ procedure DrawTreeNodes(canvas:TCanvas);
       //if data[items[i]].flags and movVerified=0 then canvas.brush.color:=$E0E0E0
       canvas.brush.color:=$E0C0C0;
      end;
-     if i=j then canvas.brush.color:=$D4F0D4 // элемент с наилучшей оценкой
+     if i=j then
+      canvas.brush.color:=$D4F0D4 // элемент с наилучшей оценкой
+     else
+      // фон обычного элемента
+      if not data[items[i]].whiteTurn then
+       canvas.brush.color:=$F8F8F8
       else
-       // фон обычного элемента
-       if not data[items[i]].whiteTurn then
-        canvas.brush.color:=$F8F8F8
-       else
-        canvas.brush.color:=$D8D8D8;
+       canvas.brush.color:=$D8D8D8;
      canvas.font.color:=canvas.pen.color;
-     // нет ли элемента в базе?
-     (*hash:=BoardHash(data[items[i]]);
-     for dbInd:=0 to high(dbItems) do /// TODO: оптимизировать
-      if dbItems[dbInd].hash=hash then
-       canvas.font.color:=$8000; *)
-
      cx:=25+d*COL_WIDTH;
      cy:=pos[i];
      if d>0 then begin
@@ -188,6 +183,11 @@ procedure DrawTreeNodes(canvas:TCanvas);
        x:=cx+COL_WIDTH div 2-9;
        canvas.MoveTo(x,cy-6);
        canvas.LineTo(x,cy+7);
+      end;
+      if data[items[i]].HasFlag(movDB) then begin
+       x:=cx+COL_WIDTH div 2-7;
+       canvas.brush.color:=$80E0F0;
+       canvas.Ellipse(x-5,cy-6,x+5,cy+7);
       end;
      end else
       canvas.RoundRect(cx-22,cy-12,cx+32,cy+12,7,7);

@@ -718,7 +718,7 @@ var
 begin
  try
  with PBox.Canvas do begin
-  brush.Color:=$B0CADA;
+  brush.Color:=$C0D0D4;
   w:=8*CELL_SIZE+30;
   FillRect(rect(0,0,w,w));
   pen.color:=$202020;
@@ -766,12 +766,12 @@ begin
   // Фигуры
   with data[displayBoard] do
    for i:=0 to 7 do
-    for k:=0 to 7 do begin
+    for k:=7 downto 0 do begin
      j:=k; v:=i;
      if playerWhite then j:=7-j else v:=7-v;
      if CellOccupied(v,k) then begin
       if (animation>0) and (v=lastTurnTo and $F) and (k=lastTurnTo shr 4) then continue;
-      Pieces.Draw(PBox.canvas, 15+round((i+0.5)*CELL_SIZE)-30, 15+round((j+0.5)*CELL_SIZE)-30,
+      Pieces.Draw(PBox.canvas, 15+round((i+0.5)*CELL_SIZE)-30, 15+round((j+0.5)*CELL_SIZE)-40,
         GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
      end;
     end;
@@ -791,7 +791,7 @@ begin
      x1:=7-x1; x2:=7-x2;
     end;
     i:=15+round(CELL_SIZE*(0.5+x1+(animation/9)*(x2-x1)))-30;
-    j:=15+round(CELL_SIZE*(0.5+y1+(animation/9)*(y2-y1)))-30;
+    j:=15+round(CELL_SIZE*(0.5+y1+(animation/9)*(y2-y1)))-40;
     Pieces.Draw(PBox.canvas,i,j,GetPieceType(v,k)-1+6*byte(GetPieceColor(v,k)=Black));
    end;
  end;
@@ -893,6 +893,6 @@ end;
 initialization
 // BlackFieldColor:=StrToInt('$00335C8E');
 // WhiteFieldColor:=StrToInt('$008aC5f2');
- BlackFieldColor:=StrToInt('$006580A0');
- WhiteFieldColor:=StrToInt('$00C0E0E8');
+ BlackFieldColor:=StrToInt('$00A0B0B4');
+ WhiteFieldColor:=StrToInt('$00D8E0E2');
 end.

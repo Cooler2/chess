@@ -130,6 +130,7 @@ implementation
 
  // оценка позиции (rate - за черных)
  procedure EstimatePosition(boardIdx:integer;simplifiedMode:boolean;noCache:boolean=false);
+  label ret;
   const
    PawnRate:array[0..7] of single=(1, 1, 1, 1.02, 1.1, 1.3, 1.9, 2);
   var
@@ -143,6 +144,7 @@ implementation
    cachedRate:single;
    cachedFromDB:boolean;
    wRate,bRate:single;
+   wPawns,bPawns:integer;
    setFlags:byte;
   begin
    inc(estCounter);
@@ -154,8 +156,8 @@ implementation
     if CompareBoards(b^,data[j]) then begin
      inc(n);
      if n>=3 then begin
-      b.BlackRate:=1;
-      b.WhiteRate:=1;
+      b.BlackRate:=0.1;
+      b.WhiteRate:=0.1;
       b.rate:=0;
       b.SetFlag(movRepeat);
       exit;
@@ -178,12 +180,13 @@ implementation
     bRate:=-300;
     ClearFlag(movCheck);
     CalcBeatable(b^,beatable);
+    wPawns:=0; bPawns:=0;
     // Базовая оценка
     for i:=0 to 7 do
      for j:=0 to 7 do
       case GetCell(i,j) of
-       PawnWhite:wRate:=wRate+PawnRate[j];
-       PawnBlack:bRate:=bRate+PawnRate[7-j];
+       PawnWhite:begin wRate:=wRate+PawnRate[j]; inc(wPawns); end;
+       PawnBlack:begin bRate:=bRate+PawnRate[7-j]; inc(bPawns); end;
 
        RookWhite:wRate:=wRate+5;
        RookBlack:bRate:=bRate+5;
@@ -204,6 +207,15 @@ implementation
         if beatable[i,j] and White>0 then SetFlag(movCheck);
        end;
       end;
+
+    // Недостаточно фигур для победы?
+    if (wRate<6.5) and (bRate<9) or
+       (bRate<6.5) and (wRate<9) then begin
+     rate:=0;
+     setflags:=setflags or movStalemate;
+     goto ret;
+    end;
+
 
     if gamestage<3 then begin // блок оценок, неактуальных в эндшпиле
      // Бонус за рокировку
@@ -294,8 +306,9 @@ implementation
       j:=wKingPos shr 4;
       wRate:=wRate-0.15*max2(abs(i-x),abs(j-y));
       if wRate<6 then begin // одни короли - ничья
-       wRate:=1; bRate:=1;
+       rate:=0;
        setflags:=setflags or movStalemate;
+       goto ret;
       end;
     end;
 
@@ -307,6 +320,7 @@ implementation
      setflags:=setflags or movCheckmate;
     end;
 
+ret:
     SetFlag(setFlags);
 
     // сохранить вычисленную оценку в кэше
@@ -750,10 +764,12 @@ implementation
    st:string;
    i,n,best:integer;
    fl:boolean;
+   moveToDo:integer;
   begin
    ASSERT(IsMyTurn);
    ASSERT(curBoard.firstChild>0);
    result:=false;
+   moveToDo:=0;
    n:=memSize-freeCnt;
    LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d, reqQ=%d, reqSubQ=%d, ',
     [round(curBoard.quality),n,round(100*n/memSize),estCounter,
@@ -763,8 +779,7 @@ implementation
    n:=curBoard.firstChild;
    if data[n].nextSibling<=0 then begin // единственный ход
     LogMessage('Single turn - no choice');
-    moveReady:=n;
-    result:=true;
+    moveToDo:=n;
    end;
 
    // пройдём по всем вариантам и выберем наилучший
@@ -778,13 +793,12 @@ implementation
     n:=data[n].nextSibling;
    end;
    // Победа?
-   if max>=200 then begin
-    moveReady:=best;
-    result:=true;
-   end;
+   if max>=100 then
+     moveToDo:=best;
+
 
    // Единственный ход с высокой оценкой?
-   if not result and
+   if (moveToDo=0) and
       (data[best].quality>subQual[aiLevel]) then begin
     n:=curBoard.firstChild;
     fl:=true;
@@ -795,21 +809,19 @@ implementation
     end;
     if fl then begin
      LogMessage('Single turn with high score');
-     moveReady:=best;
-     result:=true;
+     moveToDo:=best;
     end;
    end;
 
    // 3. Прочие лимиты
-   if not result and
+   if (moveToDo=0) and
      (data[best].quality>subQual[aiLevel]) and
-     (curBoard.quality>Qual[aiLevel]) or (MyTickCount-startTime>turnTimeLimit*1000) then begin
-    moveReady:=best;
-    result:=true;
-   end;
+     (curBoard.quality>Qual[aiLevel]) or (MyTickCount-startTime>turnTimeLimit*1000) then
+    moveToDo:=best;
 
    // Если ход выбран...
-   if result then begin
+   if moveToDo>0 then begin
+    result:=true;
     i:=1;
     st:='Tree state:';
     n:=curBoard.firstChild;
@@ -820,9 +832,9 @@ implementation
      inc(i);
     end;
     LogMessage(st);
-    LogMessage(#13#10' -----===== AI turn: %s =====----- ',[data[moveReady].LastTurnAsString]);
+    LogMessage(#13#10' -----===== AI turn: %s =====----- ',[data[moveToDo].LastTurnAsString]);
     LogMessage('Time: %.1f, est=%d, q=%d',
-     [(MyTickCount-startTime)/1000,estCounter-startEstCounter,round(data[moveReady].quality)]);
+     [(MyTickCount-startTime)/1000,estCounter-startEstCounter,round(data[moveToDo].quality)]);
 
     startTime:=MyTickCount;
     startEstCounter:=estCounter;
@@ -832,20 +844,20 @@ implementation
     n:=freeCnt;
     if aiSelfLearn then
      UpdateRatesBase;
-    DeleteChildrenExcept(curBoardIdx,moveReady);
+    DeleteChildrenExcept(curBoardIdx,moveToDo);
     LogMessage('Branches deleted, %d nodes removed (%d nodes left)',
      [freeCnt-n,memSize-freeCnt]);
 
     st:=''; i:=1;
-    n:=data[moveReady].firstChild;
+    n:=data[moveToDo].firstChild;
     while n>0 do begin
      // вывод всех вариантов в лог
      st:=st+Format(#13#10' %d) %s %.3f (q=%d)',[i,data[n].LastTurnAsString,data[n].rate,round(data[n].quality)]);
      n:=data[n].nextSibling;
      inc(i);
     end;
-    LogMessage('New tree state (depth=%d, id=%d): %s',[data[n].depth,n,st]);
-    exit;
+    LogMessage('New tree state (depth=%d, id=%d): %s',[data[moveToDo].depth,moveToDo,st]);
+    moveReady:=moveToDo;
    end;
   end;
 

@@ -117,6 +117,7 @@ implementation
    hash:int64;
    b:TBoard;
    rate:single;
+   q:integer;
   begin
     for i:=0 to high(dbRates) do begin
      move(dbRates[i],b,sizeof(TField)+2);
@@ -128,7 +129,7 @@ implementation
      if playerWhite<>dbRates[i].playerIsWhite then rate:=-rate; // оценка за другого игрока
      rateCache[h].rate:=rate;
      rateCache[h].flags:=dbRates[i].rFlags or movDB;
-     rateCache[h].quality:=dbRates[i].quality div 1000;
+     rateCache[h].quality:=Clamp(dbRates[i].quality,0,65500);
     end;
   end;
 
@@ -150,7 +151,6 @@ implementation
      dbRates[n].FromString(st);
     end;
     close(f);
-    UpdateCacheWithRates;
    except
     on e:exception do ErrorMessage('Error in LoadDB: '+e.message);
    end;

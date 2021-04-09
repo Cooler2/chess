@@ -76,7 +76,7 @@ type
   parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
   quality:single; // качество оценки - зависит от кол-ва дочерних позиций и глубины просмотра
-  qFromDB:byte; // качество оценки, записанное из базы
+  qFromDB:word; // качество оценки, записанное из базы
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
   debug:byte;
@@ -359,6 +359,8 @@ implementation
     end;
    end;
   begin
+   SpinLock(dataLocker);
+   try
    // проверка ствола дерева
    n:=curBoardIdx;
    i:=curBoard.depth;
@@ -413,6 +415,9 @@ implementation
     if data[i].debug<>0 then inc(data[i].debug);
     if not (data[i].debug in [0,$DD]) then
      ASSERT(false,inttostr(i)); // debug=$DE - нода вне дерева, $DC - дважды в дереве
+   end;
+   finally
+    Unlock(dataLocker);
    end;
   end;
 
