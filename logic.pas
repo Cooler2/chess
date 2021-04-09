@@ -482,8 +482,8 @@ implementation
     v:=GetCell(x,y);
     SetCell(x,y,0);
     lastPiece:=GetCell(nx,ny);
-    if not CellIsEmpty(nx,ny) then flags:=flags or movBeat
-     else flags:=flags and (not movBeat);
+    if not CellIsEmpty(nx,ny) then SetFlag(movBeat)
+     else ClearFlag(movBeat);
     SetCell(nx,ny,v);
 
     // пешка -> ферзь
@@ -691,7 +691,7 @@ implementation
 
    exit;
   check:
-   b.flags:=b.flags or movCheck;
+   b.SetFlag(movCheck);
   end;
 
  procedure ResetCounters;

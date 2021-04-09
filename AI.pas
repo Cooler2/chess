@@ -40,6 +40,9 @@ implementation
   bweight:array[0..6] of single=(0,1, 5.2, 3.1, 3.1, 9.3, 250);
   bweight2:array[0..6] of single=(0,1, 3.1, 3.1, 5.2, 9.3, 250);
 
+  // множитель для оценки качества предков
+  QUALITY_FADE = 0.5;
+
  type
   // Корзина - содержит элементы с одинаковым приоритетом
   TBasket=record
@@ -381,8 +384,6 @@ ret:
  // Обновляет качество оценок
  // Возвращает сколько качества нужно прибавить предку
  function RateSubtree(node:integer):single;
-  const
-   QUALITY_FADE = 0.5;
   var
    d:integer;
    best,v:single;
@@ -704,6 +705,37 @@ ret:
    end;
   end;
 
+ // Если настало время развить позицию, оцененную из БД, то нужна эта процедура
+ procedure ExtendRatedNode(node:integer);
+  var
+   q:single;
+   n,w:integer;
+  begin
+   with data[node] do begin
+    q:=quality;
+    // Скорректировать качество предков
+    n:=parent;
+    while n>0 do begin
+     q:=q*QUALITY_FADE;
+     data[n].quality:=data[n].quality-q;
+     if n=curBoardIdx then break;
+     n:=data[n].parent;
+    end;
+    // Превратить ноду в обычную
+    ClearFlag(movDB);
+    // определить необходимый вес для получения оценки сопоставимой точности
+    w:=0;
+    while q>10 do begin
+     inc(w,10);
+     q:=q/(QUALITY_FADE*25);
+    end;
+    weight:=max2(weight,w);
+    LogMessage('Promote rated node %s :: r=%.2f, q=%d, w=%d',[BuildLine(node),rate,round(quality),weight]);
+    quality:=1;
+    active.Add(node);
+   end;
+  end;
+
  // Продлить перспективные ветви дерева
  // Нужно чтобы каждая новая фаза не продолжалась слишком уж долго,
  // поэтому по мере углубления дерева нужно уменьшать задачу
@@ -738,8 +770,12 @@ ret:
       AddWeight(n,10);
       outList^:=n;
       inc(outList);
-     end else
-      ExtendTree(n,recursion+1,outList);
+     end else begin
+      if data[n].HasFlag(movDB) then
+       ExtendRatedNode(n) // нода оценена из БД и не имеет потомков - сконвертировать в обычную
+      else
+       ExtendTree(n,recursion+1,outList);
+     end;
     end else // безусловно развить все ветки 1-го уровня, если они совсем слабо развиты
      if (recursion=0) and
         (data[n].quality<30) then begin

@@ -126,7 +126,7 @@ implementation
      rateCache[h].hash:=hash;
      rateCache[h].cells:=b.cells;
      rate:=dbRates[i].rate;
-     if playerWhite<>dbRates[i].playerIsWhite then rate:=-rate; // оценка за другого игрока
+     if playerWhite=dbRates[i].playerIsWhite then rate:=-rate; // оценка за другого игрока
      rateCache[h].rate:=rate;
      rateCache[h].flags:=dbRates[i].rFlags or movDB;
      rateCache[h].quality:=Clamp(dbRates[i].quality,0,65500);

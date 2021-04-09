@@ -93,6 +93,7 @@ type
     displayBoard:integer; // индекс отображаемой позиции (может отличаться от текущей в режиме просмотра дерева)
     curPiecePos:byte;     // позиция выбранной фигуры
     myTurnStored:boolean;
+    turnDebugMode:boolean;
     procedure ClearSelected;
     procedure MakeAiTurn;
     procedure MakeExternalTurn;
@@ -107,7 +108,6 @@ implementation
  uses Apus.MyServis,gamedata,logic,AI,TreeView,cache,SelfLearn;
 {$R *.dfm}
  var
-  turnFrom,turnTo:integer;
   BlackFieldColor,WhiteFieldColor:cardinal;
 
 procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
@@ -183,6 +183,13 @@ begin
    end;
   end;
  end;
+ // Отладочный режим: останов AI перед тем, как сделать ход
+ if key=VK_F6 then begin
+  turnDebugMode:=not turnDebugMode;
+  LogMessage('F6: debug mode = %d',[byte(turnDebugMode)]);
+  Status.Panels[0].Text:='Debug mode = '+inttostr(byte(turnDebugMode));
+ end;
+
 
  // F8 - сохранить ход в библиотеке и вернуться к исходной позиции
  if key=VK_F8 then begin
@@ -245,6 +252,7 @@ procedure TMainForm.MakeExternalTurn;
 var
  f:TextFile;
  x,y,i:integer;
+ turnFrom,turnTo:integer;
 begin
  try
   assignFile(f,moveFileName);
@@ -665,8 +673,11 @@ begin
      myTurnStored:=false; // файл отсутствует - значит был удалён потребителем, и если появится снова - это для нас
  end;
 
- if StartBtn.Down and not IsPlayerTurn and (animation=0)
-    and (moveReady>0) then MakeAiTurn;
+ if StartBtn.Down and
+    not IsPlayerTurn and
+    (animation=0) and
+    not turnDebugMode and
+    (moveReady>0) then MakeAiTurn;
  except
   on e:Exception do ForceLogMessage('Error in Timer: '+ExceptionMsg(e));
  end;

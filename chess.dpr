@@ -8,7 +8,8 @@ uses
   TreeView in 'TreeView.pas' {TreeWnd},
   gamedata in 'gamedata.pas',
   AI in 'AI.pas',
-  cache in 'cache.pas';
+  cache in 'cache.pas',
+  SelfLearn in 'SelfLearn.pas';
 
 {$R *.res}
 
