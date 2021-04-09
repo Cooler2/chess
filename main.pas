@@ -616,6 +616,7 @@ begin
   menuBtn.enabled:=false;
 {  turnWhiteBtn.Enabled:=false;
   turnBlackBtn.Enabled:=false;}
+  gameState:=0;
   StartAI;
  end else begin
   startBtn.Enabled:=false;

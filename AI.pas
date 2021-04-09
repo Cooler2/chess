@@ -796,7 +796,7 @@ ret:
    subQual:array[1..4] of single=(200,300,500,1000);
    qual:array[1..4] of single=(12000,28000,50000,100000);
   var
-   q,max:single;
+   q,subQ,max,f:single;
    st:string;
    i,n,best:integer;
    fl:boolean;
@@ -806,10 +806,6 @@ ret:
    ASSERT(curBoard.firstChild>0);
    result:=false;
    moveToDo:=0;
-   n:=memSize-freeCnt;
-   LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d, reqQ=%d, reqSubQ=%d, ',
-    [round(curBoard.quality),n,round(100*n/memSize),estCounter,
-     round(qual[aiLevel]),round(subQual[aiLevel])]);
 
    // 1. Имеется ли единственный ход
    n:=curBoard.firstChild;
@@ -850,10 +846,29 @@ ret:
    end;
 
    // 3. Прочие лимиты
+   f:=1;
+   // Если у нас выигрышное положение - думать можно меньше (быстрее)
+   if data[best].rate>3 then f:=f*0.9;
+   if data[best].rate>6 then f:=f*0.8;
+   if data[best].rate>curBoard.rate+0.2 then f:=f*0.8;
+   if data[best].rate>curBoard.rate+0.5 then f:=f*0.8;
+   // ...и наоборот
+   if data[best].rate<-3 then f:=f*1.1;
+   if data[best].rate<-6 then f:=f*1.2;
+   if data[best].rate<curBoard.rate-0.2 then f:=f*1.2;
+   if data[best].rate<curBoard.rate-0.5 then f:=f*1.2;
+
+   q:=Qual[aiLevel]*f;
+   subQ:=subQual[aiLevel]*f;
    if (moveToDo=0) and
-     (data[best].quality>subQual[aiLevel]) and
-     (curBoard.quality>Qual[aiLevel]) or (MyTickCount-startTime>turnTimeLimit*1000) then
+    (data[best].quality>subQ) and
+    (curBoard.quality>q) or (MyTickCount-startTime>turnTimeLimit*1000) then
     moveToDo:=best;
+
+   n:=memSize-freeCnt;
+   LogMessage('--- q=%d nodes=%d (%d%%), estCnt=%d, reqQ=%d, reqSubQ=%d, ',
+    [round(curBoard.quality),n,round(100*n/memSize),estCounter,
+     round(qual[aiLevel]),round(subQual[aiLevel])]);
 
    // Если ход выбран...
    if moveToDo>0 then begin
