@@ -238,11 +238,12 @@ implementation
      rate:=rateCache[h].rate;
      if rateCache[h].quality>0 then begin
       // оценка из БД
-      quality:=rateCache[h].quality*1000;
-      flags:=flags or movDB;
+      qFromDB:=rateCache[h].quality;
+      quality:=qFromDB*1000;
+      SetFlag(movDB);
      end else begin
       quality:=1;
-      flags:=flags or rateCache[h].flags;
+      SetFlag(rateCache[h].flags);
      end;
      if PlayerWhite then rate:=-rate;
      result:=true;

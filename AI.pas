@@ -33,7 +33,7 @@ interface
  procedure EstimatePosition(boardIdx:integer;simplifiedMode:boolean;noCache:boolean=false);
 
 implementation
- uses Apus.MyServis,Windows,SysUtils,Classes,gamedata,logic,cache;
+ uses Apus.MyServis,Windows,SysUtils,Classes,gamedata,logic,cache,SelfLearn;
 
  const
   // штраф за незащищенную фигуру под боем
@@ -157,7 +157,7 @@ implementation
       b.BlackRate:=1;
       b.WhiteRate:=1;
       b.rate:=0;
-      b.flags:=b.flags or movRepeat;
+      b.SetFlag(movRepeat);
       exit;
      end;
     end;
@@ -176,7 +176,7 @@ implementation
    with b^ do begin
     wRate:=-300;
     bRate:=-300;
-    flags:=flags and (not movCheck);
+    ClearFlag(movCheck);
     CalcBeatable(b^,beatable);
     // Базовая оценка
     for i:=0 to 7 do
@@ -197,11 +197,11 @@ implementation
        KingWhite:begin
         // условие инвертировано
         if WhiteTurn or (beatable[i,j] and Black=0) then wRate:=wRate+305;  // останется 5 за короля не под боем
-        if beatable[i,j] and Black>0 then flags:=flags or movCheck;
+        if beatable[i,j] and Black>0 then SetFlag(movCheck);
        end;
        KingBlack:begin
         if not WhiteTurn or (beatable[i,j] and White=0) then bRate:=bRate+305;
-        if beatable[i,j] and White>0 then flags:=flags or movCheck;
+        if beatable[i,j] and White>0 then SetFlag(movCheck);
        end;
       end;
 
@@ -307,7 +307,7 @@ implementation
      setflags:=setflags or movCheckmate;
     end;
 
-    flags:=flags or setFlags;
+    SetFlag(setFlags);
 
     // сохранить вычисленную оценку в кэше
     if not noCache and aiCacheEnabled then
@@ -341,35 +341,6 @@ implementation
      else gamestage:=2;
   end;
 
- function MakeTurnFromLibrary:boolean;
-  var
-   i,j,n,weight,board:integer;
-   turns:array[1..30] of integer;
-  begin
-    n:=0; weight:=0;
-    // Составим список вариантов ходов для текущей позиции
-    for i:=0 to high(turnLib) do
-     if (CompareMem(@curBoard.cells,@turnLib[i].field,sizeof(TField))) and
-        (curBoard.whiteTurn=turnLib[i].whiteTurn) then begin
-      inc(n);
-      turns[n]:=i;
-      inc(weight,turnlib[i].weight);
-     end;
-    if n>0 then begin
-     j:=random(weight);
-     weight:=0;
-     for i:=1 to n do begin
-      weight:=weight+turnlib[turns[i]].weight;
-      if weight>j then begin
-       board:=AddChild(curBoardIdx);
-       with turnlib[turns[i]] do
-        DoMove(data[board],turnFrom,turnTo);
-       moveReady:=board;
-       exit;
-      end;
-     end;
-    end;
-  end;
 
  // Корректирует вес поддерева, добавляет позиции с положительным весом в список активных
  procedure AddWeight(node,add:integer);
@@ -408,7 +379,7 @@ implementation
     if d=0 then begin // лист без потомков
      if flags and movRated=0 then begin
       result:=quality;
-      flags:=flags or movRated;
+      SetFlag(movRated);
      end else
       result:=0;
      exit;
@@ -416,26 +387,26 @@ implementation
     // Есть потомки: вычислить оценку
     result:=0;
     mode:=whiteTurn xor playerWhite; // что вычислять: минимум или максимум
-    if d>0 then begin
+    result:=result+RateSubtree(d)*QUALITY_FADE;
+    best:=data[d].rate;
+    d:=data[d].nextSibling;
+    while d>0 do begin
      result:=result+RateSubtree(d)*QUALITY_FADE;
-     best:=data[d].rate;
-     d:=data[d].nextSibling;
-     while d>0 do begin
-      result:=result+RateSubtree(d)*QUALITY_FADE;
-      v:=data[d].rate;
-      if mode then begin
-       if v>best then best:=v;
-      end else begin
-       if v<best then best:=v;
-      end;
-      d:=data[d].nextSibling;
+     v:=data[d].rate;
+     if mode then begin
+      if v>best then best:=v;
+     end else begin
+      if v<best then best:=v;
      end;
+     d:=data[d].nextSibling;
     end;
-    flags:=flags or movRated;
+    SetFlag(movRated);
     quality:=quality+result;
     // Достигнуть какой-либо величины выгоднее в краткосрочной перспективе, поэтому оценка затухает
     // Иначе AI может сильно углублять ветки, не имеющие развития позиции в ущерб тем, где развитие возможно.
-    rate:=best*0.999;
+    best:=best*0.999;
+    rate:=best;
+    ClearFlag(movDB);
    end;
   end;
 
@@ -451,7 +422,7 @@ implementation
    while n>0 do begin
     for i:=0 to high(turnLib) do
      if turnLib[i].CompareWithBoard(data[n]) then begin
-      v:=0.01*random(turnLib[i].weight);
+      v:=0.02*random(turnLib[i].weight);
       data[n].rate:=data[n].rate+v;
       st:=st+Format(' %s +%.2f;',[data[n].LastTurnAsString,v]);
       break;
@@ -461,6 +432,7 @@ implementation
    if st<>'' then LogMessage('Library turns promoted:'+st);
   end;
 
+ // Вычисляет оценки всего дерева, обновляет качество.
  procedure RateTree;
   var
    time:int64;
@@ -476,7 +448,9 @@ implementation
    if time>100 then LogMessage('RateTree time: %d',[time]);
   end;
 
- // Добавляет дочерние узлы для всех возможных продолжений указанной позиции
+ // Добавляет дочерние ноды для всех возможных продолжений указанной позиции.
+ // Оценивает эти новые ноды.
+ // Ноды с положительным весом добавляет в список активных
  procedure ExtendNode(node:integer);
   var
    i,j,k,color,newNode,cellFrom:integer;
@@ -508,9 +482,6 @@ implementation
        newNode:=AddChild(node);
        if newNode=0 then exit; // закончилась память
        DoMove(data[newNode],cellFrom,moves[k]);
-       // TODO: нет смысла детально оценивать ноды, которые будут продолжены, т.к. оценка все равно перезапишется.
-       // Достаточно лишь проверить не произошло ли с этим ходом завершение игры.
-       // Правда таких узлов все-равно немного, так что выгода от такой оптимизации будет не больше 5-10%
        EstimatePosition(newNode,false);
        with data[newNode] do begin
         if abs(rate)>200 then begin // недопустимый ход?
@@ -523,6 +494,7 @@ implementation
         else
         if flags and movBeat>0 then weight:=weight+6;
 
+        if flags and movDB>0 then continue; // позиция с оценкой из БД - не развивать независимо от веса
         if weight<=0 then continue; // позиция не заслуживает продолжения
        end;
        toAdd[toAddCnt]:=newNode;
@@ -537,12 +509,12 @@ implementation
       // Нет ни одного хода: значит либо мат либо пат
       if flags and movCheck=0 then begin
        rate:=0;
-       flags:=flags or movStalemate;
+       SetFlag(movStalemate);
       end else begin
        // Если был поставлен шах - то оцениваем позицию как мат
        if whiteTurn xor playerWhite then rate:=-300+depth
         else rate:=300-depth;
-       flags:=flags or movCheckmate;
+       SetFlag(movCheckmate);
       end;
      end;
   end;
@@ -858,6 +830,8 @@ implementation
     stage:=0;
     // удаление ненужных веток
     n:=freeCnt;
+    if aiSelfLearn then
+     UpdateRatesBase;
     DeleteChildrenExcept(curBoardIdx,moveReady);
     LogMessage('Branches deleted, %d nodes removed (%d nodes left)',
      [freeCnt-n,memSize-freeCnt]);
@@ -1027,6 +1001,9 @@ implementation
    if started then exit;
    moveReady:=0;
    active.Init;
+
+   if aiUseDB then
+    UpdateCacheWithRates;
 
    // Создать потоки
    GetSystemInfo(sysInfo);

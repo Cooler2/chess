@@ -104,7 +104,7 @@ var
   MainForm: TMainForm;
 
 implementation
- uses Apus.MyServis,gamedata,logic,AI,TreeView, cache;
+ uses Apus.MyServis,gamedata,logic,AI,TreeView,cache,SelfLearn;
 {$R *.dfm}
  var
   turnFrom,turnTo:integer;
@@ -342,7 +342,6 @@ begin
  UpdateCurPlrBtn;
 
  ClearCache;
- UpdateCacheWithRates;
  DrawBoard(sender);
 end;
 
@@ -599,6 +598,7 @@ procedure TMainForm.StartBtnClick(Sender: TObject);
 begin
  if StartBtn.down then begin // кнопку нажали
   SelLevelChange(sender); // обновить сложность
+  UpdateOptions(sender);
   startBtn.Caption:='Stop AI';
   swapBtn.Enabled:=false;
   resetBtn.enabled:=false;
@@ -633,7 +633,6 @@ begin
  DrawBoard(sender);
  // Необходима очистка кэша, т.к. оценки справедливы для другого игрока
  ClearCache;
- UpdateCacheWithRates;
 end;
 
 procedure TMainForm.TimerTimer(Sender: TObject);
@@ -817,9 +816,9 @@ begin
    end;
  if cnt=0 then
   if curBoard.flags and movCheck>0 then
-   curBoard.flags:=curBoard.flags or movCheckmate
+   curBoard.SetFlag(movCheckMate)
   else
-   curBoard.flags:=curBoard.flags or movStalemate;
+   curBoard.SetFlag(movStalemate);
 end;
 
 // Оценивает позицию и, если надо, завершает игру
@@ -892,6 +891,8 @@ begin
 end;
 
 initialization
- BlackFieldColor:=StrToInt('$00335C8E');
- WhiteFieldColor:=StrToInt('$008aC5f2');
+// BlackFieldColor:=StrToInt('$00335C8E');
+// WhiteFieldColor:=StrToInt('$008aC5f2');
+ BlackFieldColor:=StrToInt('$006580A0');
+ WhiteFieldColor:=StrToInt('$00C0E0E8');
 end.

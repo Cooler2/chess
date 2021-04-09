@@ -76,6 +76,7 @@ type
   parent,firstChild,lastChild,nextSibling,prevSibling:integer; // ссылки дерева (пустые значения = 0) TODO: возможно prevSibling можно убрать
   whiteRate,blackRate,rate:single; // оценки позиции
   quality:single; // качество оценки - зависит от кол-ва дочерних позиций и глубины просмотра
+  qFromDB:byte; // качество оценки, записанное из базы
   lastTurnFrom,lastTurnTo:byte; // параметры последнего хода
   lastPiece:byte; // тип взятой последним ходом фигуры
   debug:byte;
@@ -87,6 +88,7 @@ type
   function CellOccupied(x,y:integer):boolean; inline;
   function GetCell(x,y:integer):byte; inline;
   procedure SetCell(x,y:integer;value:integer); {$IFNDEF COMPACT} inline; {$ENDIF}
+  function HasFlag(f:byte):boolean; inline;
   procedure SetFlag(f:byte); inline;
   procedure ClearFlag(f:byte); inline;
   function GetPieceType(x,y:integer):byte; inline;
@@ -100,19 +102,6 @@ type
  end;
 
  TMovesList=array[0..35] of byte; // [0] - number of moves, [1]..[n] - target cell position
-
- // Запись БД оценок
- TRateEntry=record
-  // информация о позиции - точно такая как в TBoard
-  cells:TField;
-  rFlags:byte;
-  whiteTurn:boolean;
-  // ---
-  rate:single;
-  quality:byte;
-  procedure FromString(st:string);
-  function ToString:string;
- end;
 
  // Сохранённый ход
  TSavedTurn=record
@@ -149,9 +138,6 @@ var
 
  // библиотека
  turnLib:array of TSavedTurn;
-
- // база оценок
- dbRates:array of TRateEntry;
 
  // статистика
  spinCounter:int64;
@@ -196,16 +182,10 @@ var
  procedure AddAllMovesToLibrary(weight:byte);
  procedure DeleteLastMoveFromLibrary;
 
- // База оценок позиций
- procedure LoadRates;
- procedure SaveRates;
- procedure UpdateCacheWithRates;
-
 implementation
  uses SysUtils,cache;
 
  const
-  ratesFileName = 'rates.dat';
   libFileName = 'lib.dat';
 
  procedure SpinLock(var lock:NativeInt); inline;
@@ -653,65 +633,6 @@ implementation
     end;
   end;
 
- // Оценки из базы хранятся в кэше вместе с другими кэшированными оценками
- procedure UpdateCacheWithRates;
-  var
-   i,h:integer;
-   hash:int64;
-   b:TBoard;
-  begin
-    for i:=0 to high(dbRates) do begin
-     move(dbRates[i],b,sizeof(TField)+2);
-     BoardHash(b,hash);
-     h:=hash and cacheMask;
-     rateCache[h].hash:=hash;
-     rateCache[h].cells:=b.cells;
-     rateCache[h].rate:=dbRates[i].rate;
-     rateCache[h].flags:=dbRates[i].rFlags or movDB;
-     rateCache[h].quality:=dbRates[i].quality;
-    end;
-  end;
-
- // Загрузка базы данных оценок
- procedure LoadRates;
-  var
-   f:TextFile;
-   n:integer;
-   st:string;
-  begin
-   if not fileExists(ratesFileName) then exit;
-   try
-    assign(f,ratesFileName);
-    reset(f);
-    while not eof(f) do begin
-     readln(f,st);
-     n:=length(dbRates);
-     SetLength(dbRates,n+1);
-     dbRates[n].FromString(st);
-    end;
-    close(f);
-    UpdateCacheWithRates;
-   except
-    on e:exception do ErrorMessage('Error in LoadDB: '+e.message);
-   end;
-  end;
-
- procedure SaveRates;
-  var
-   f:TextFile;
-   i:integer;
-  begin
-   try
-    assign(f,ratesFileName);
-    rewrite(f);
-    for i:=0 to high(dbRates) do
-     writeln(f,dbRates[i].ToString);
-    close(f);
-   except
-    on e:exception do ErrorMessage('Error in SaveDB: '+e.message);
-   end;
-  end;
-
  function IsPlayerTurn:boolean;
   begin
    result:=not curBoard.whiteTurn xor playerWhite;
@@ -874,6 +795,11 @@ function FieldFromStr(st: string):TField;
    flags:=flags and not f;
   end;
 
+ function TBoard.HasFlag(f:byte):boolean;
+  begin
+   result:=flags and f>0;
+  end;
+
  function TBoard.ToString: string;
   begin
    result:=Format('cells=%s; white=%d; from=%d; to=%d; rF=%d; f=%d',
@@ -973,31 +899,6 @@ function TSavedTurn.CompareWithBoard(var b: TBoard): boolean;
   if not CompareMem(@data[b.parent].cells,@field,sizeof(field)) then exit;
   result:=true;
  end;
-
-{ TRateEntry }
-
- procedure TRateEntry.FromString(st: string);
-  var
-   i:integer;
-   sa:StringArr;
-   pair:TNameValue;
-  begin
-   sa:=Split(';',st);
-   for i:=0 to high(sa) do begin
-    pair.Init(sa[i]);
-    if pair.Named('cells') then cells:=FieldFromStr(pair.value) else
-    if pair.Named('white') then whiteTurn:=pair.GetInt<>0 else
-    if pair.Named('rF') then rFlags:=pair.GetInt else
-    if pair.Named('r') then rate:=pair.GetFloat else
-    if pair.Named('q') then quality:=pair.GetInt;
-   end;
- end;
-
- function TRateEntry.ToString: string;
-  begin
-   result:=Format('cells=%s; white=%d; rF=%d; r=%.3f; q=%d',
-    [FieldToStr(cells),byte(whiteTurn),rFlags,rate,quality]);
-  end;
 
 initialization
  InitCritSect(globalLock,'global');
